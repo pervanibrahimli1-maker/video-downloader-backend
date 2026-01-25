@@ -1,15 +1,13 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
+// ✅ exec əvəzinə spawn istifadə edin
+const { spawn } = require('child_process'); 
 const fs = require('fs');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Yeni: Rate Limiting üçün paket
 const rateLimit = require('express-rate-limit');
-// ✅ Yeni: Command Injection-ın qarşısını almaq üçün paket
-const shellEscape = require('shell-escape');
 
 // ✅ Rate Limiting konfiqurasiyası
 // Bir IP-dən 15 dəqiqə ərzində maksimum 10 sorğuya icazə verir.
@@ -17,8 +15,8 @@ const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 dəqiqə
     max: 10, // Hər IP-dən 15 dəqiqədə maksimum 10 sorğu
     message: 'Çoxlu sorğu göndərmisiniz, zəhmət olmasa bir qədər gözləyin.',
-    standardHeaders: true, // Rate limit məlumatını HTTP başlığında qaytarır
-    legacyHeaders: false, // Köhnə X-Rate-Limit-* başlıqlarını deaktiv edir
+    standardHeaders: true, 
+    legacyHeaders: false, 
 });
 
 // ✅ Yüklənmiş videolar üçün qovluğu runtime-da yarat
@@ -34,9 +32,7 @@ try {
 
 // Middleware
 app.use(cors({
-    origin: 'https://tt-instavideoindirme.free.nf', // Buraya SİZİN FRONTEND domeninizi yazın.
-    // Əgər gələcəkdə başqa domenlərə də icazə vermək istəyirsinizsə:
-    // origin: ['https://tt-instavideoindirme.free.nf', 'https://bashqa-domen.com'],
+    origin: 'https://tt-instavideoindirme.free.nf', // Sizin FRONTEND domeniniz
 }));
 app.use(express.json());
 
@@ -61,7 +57,6 @@ app.post('/download', limiter, async (req, res) => {
     const isValid = (inputUrl) => {
         try {
             const parsedUrl = new URL(inputUrl);
-            // http/https protokolunu və Instagram/TikTok domenlərini yoxlayın
             return (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') && 
                    (parsedUrl.hostname.includes('instagram.com') || parsedUrl.hostname.includes('tiktok.com') ||
                     parsedUrl.hostname.includes('www.instagram.com') || parsedUrl.hostname.includes('www.tiktok.com'));
@@ -76,42 +71,65 @@ app.post('/download', limiter, async (req, res) => {
         return res.status(400).json({ success: false, message: 'Daxil etdiyiniz URL etibarlı deyil. Instagram və ya TikTok linki olduğundan əmin olun.' });
     }
 
-    // ✅ Təhlükəsizlik: Command Injection-ın qarşısını almaq üçün URL və çıxış yolunu escape edin
-    const escapedUrl = shellEscape([url]);
-    
-    // Video faylı üçün daha unikal ad, toqquşmaları azaltmaq üçün
+    // Video faylı üçün unikal ad
     const videoFileName = `video-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.mp4`;
     const outputPath = path.join(DOWNLOADS_DIR, videoFileName);
-    const escapedOutputPath = shellEscape([outputPath]); // Çıxış yolunu da escape edin
+
+    // ✅ spawn üçün arqumentlər massivini təyin edin - shell istifadə olunmur, injection riski azalır.
+    const ytDlpArgs = [
+        '--force-overwrites',
+        '--no-warnings',
+        '--quiet',
+        '-o', outputPath, // outputPath artıq shell-dən keçmir
+        url // URL də artıq shell-dən keçmir
+    ];
 
     const instagramCookies = process.env.INSTAGRAM_COOKIES;
-    let ytDlpCommand = `yt-dlp --force-overwrites --no-warnings --quiet -o ${escapedOutputPath} ${escapedUrl}`;
-
     if (instagramCookies) {
-        // Kuki dəyərindəki dırnaqları escape edin ki, shell əmri düzgün işləsin
-        const escapedCookieValue = instagramCookies.replace(/"/g, '\\"'); 
-        ytDlpCommand = `yt-dlp --add-header "Cookie: ${escapedCookieValue}" --force-overwrites --no-warnings --quiet -o ${escapedOutputPath} ${escapedUrl}`;
+        // Kuki dəyərini birbaşa --add-header arqumentinə verin
+        ytDlpArgs.unshift('--add-header', `Cookie: ${instagramCookies}`);
     }
 
-    // ✅ Resursların istismarının qarşısını almaq üçün yt-dlp əməliyyatına timeout təyin edin
-    const DOWNLOAD_TIMEOUT = 120 * 1000; // 2 dəqiqə (millisecond)
+    // ✅ yt-dlp prosesi üçün timeout
+    const DOWNLOAD_TIMEOUT = 120 * 1000; // 2 dəqiqə
+
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
 
     try {
-        console.log(`Executing command: ${ytDlpCommand}`);
+        console.log(`Spawning yt-dlp with arguments: ${JSON.stringify(ytDlpArgs)}`);
+        // ✅ spawn istifadə edin
+        const ytDlpProcess = spawn('yt-dlp', ytDlpArgs, { timeout: DOWNLOAD_TIMEOUT });
 
-        exec(ytDlpCommand, { timeout: DOWNLOAD_TIMEOUT }, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`yt-dlp command failed for URL: ${url}. Error: ${error.message}`);
+        ytDlpProcess.stdout.on('data', (data) => {
+            stdoutBuffer += data.toString();
+        });
+
+        ytDlpProcess.stderr.on('data', (data) => {
+            stderrBuffer += data.toString();
+        });
+
+        ytDlpProcess.on('close', (code, signal) => {
+            if (signal === 'SIGTERM') { // Proces timeout səbəbi ilə dayandırılıb
+                console.error(`yt-dlp process timed out and was killed for URL: ${url}.`);
+                if (fs.existsSync(outputPath)) {
+                    fs.unlink(outputPath, (unlinkErr) => {
+                        if (unlinkErr) console.error(`Failed to delete partial file ${outputPath}:`, unlinkErr);
+                    });
+                }
+                return res.status(500).json({ success: false, message: 'Video yüklənməsi vaxtı bitdi. Zəhmət olmasa, daha qısa video ilə cəhd edin.' });
+            }
+
+            if (code !== 0) { // Non-zero exit code means an error
+                console.error(`yt-dlp process exited with code ${code} for URL: ${url}`);
+                console.error(`yt-dlp stderr: ${stderrBuffer}`);
                 
-                // ✅ İstifadəçiyə daha informativ xəta mesajları verin
                 let clientMessage = `Video yüklənərkən xəta baş verdi. Zəhmət olmasa, URL-in düzgünlüyünü yoxlayın.`;
-                if (error.killed && error.signal === 'SIGTERM') {
-                    clientMessage = 'Video yüklənməsi vaxtı bitdi. Zəhmət olmasa, daha qısa video ilə cəhd edin.';
-                } else if (error.message.includes('HTTP Error 429') || error.message.includes('rate-limit reached')) {
+                if (stderrBuffer.includes('HTTP Error 429') || stderrBuffer.includes('rate-limit reached')) {
                     clientMessage = 'Sorğu limiti aşıldı. Zəhmət olmasa, bir müddət sonra yenidən cəhd edin.';
-                } else if (error.message.includes('login required') || error.message.includes('content is not available')) {
+                } else if (stderrBuffer.includes('login required') || stderrBuffer.includes('content is not available')) {
                     clientMessage = 'Video əlçatan deyil, ya da giriş tələb olunur.';
-                } else if (error.message.includes('Unsupported URL')) {
+                } else if (stderrBuffer.includes('Unsupported URL')) {
                     clientMessage = 'Dəstəklənməyən URL növü. Yalnız Instagram və TikTok dəstəklənir.';
                 }
                 
@@ -123,11 +141,8 @@ app.post('/download', limiter, async (req, res) => {
                 }
                 return res.status(500).json({ success: false, message: clientMessage });
             }
-            if (stderr) {
-                console.warn(`yt-dlp stderr for URL: ${url}: ${stderr}`);
-            }
 
-            console.log(`yt-dlp stdout for URL: ${url}: ${stdout}`);
+            console.log(`yt-dlp stdout: ${stdoutBuffer}`);
             console.log(`Video uğurla endirildi: ${outputPath}`);
 
             const downloadLink = `${req.protocol}://${req.get('host')}/downloads/${videoFileName}`;
@@ -142,7 +157,6 @@ app.post('/download', limiter, async (req, res) => {
             });
 
             // ✅ Faylı yükləndikdən sonra müəyyən bir müddət (10 dəqiqə) sonra silmək
-            // İstifadəçiyə videonu yükləmək üçün vaxt vermək üçün gecikmə
             const CLEANUP_DELAY = 10 * 60 * 1000; // 10 dəqiqə (millisecond)
             setTimeout(() => {
                 if (fs.existsSync(outputPath)) {
@@ -157,6 +171,16 @@ app.post('/download', limiter, async (req, res) => {
             }, CLEANUP_DELAY);
         });
 
+        ytDlpProcess.on('error', (err) => {
+            console.error(`Failed to start yt-dlp process: ${err.message}`);
+            if (fs.existsSync(outputPath)) {
+                fs.unlink(outputPath, (unlinkErr) => {
+                    if (unlinkErr) console.error(`Failed to delete partial file ${outputPath}:`, unlinkErr);
+                });
+            }
+            return res.status(500).json({ success: false, message: 'Server daxili xəta: Yükləmə prosesi başlaya bilmədi.' });
+        });
+
     } catch (error) {
         console.error('Video emal edilərkən daxili server xətası baş verdi:', error);
         res.status(500).json({ success: false, message: 'Video yüklənərkən daxili server xətası baş verdi.', error: error.message });
@@ -166,6 +190,3 @@ app.post('/download', limiter, async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server http://localhost:${PORT} ünvanında işləyir`);
 });
-
-
-//fgdng
