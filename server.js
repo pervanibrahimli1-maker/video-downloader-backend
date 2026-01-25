@@ -1,35 +1,36 @@
 const express = require('express');
 const cors = require('cors');
 const { exec } = require('child_process');
-const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
 app.post('/download', (req, res) => {
     let { url } = req.body;
-
     if (!url) return res.status(400).json({ error: "Link daxil edin" });
 
-    // 1. Linki təmizləmək (Sual işarəsindən sonrakı izləmə kodlarını silirik)
+    // Linki təmizləmək
     url = url.split('?')[0];
 
-    // 2. Çox güclü User-Agent və Instagram-ı aldatmaq üçün parametrlər
-    // --force-overwrites və --no-playlist əlavə edildi
+    // Ən aqressiv komanda:
+    // --force-ipv4: Render-in IPv6-sı blok ola bilər, IPv4 sınayırıq
+    // --geo-bypass: Coğrafi blokları keçmək üçün
+    // --impersonate-browser: Brauzer kimi görünmək
     const command = `yt-dlp -j --no-check-certificate \
-        --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1" \
-        --add-header "Referer:https://www.instagram.com/" \
-        --add-header "Accept-Language:en-US,en;q=0.9" \
+        --force-ipv4 \
+        --no-cache-dir \
+        --geo-bypass \
+        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+        --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+        --add-header "Accept-Language:en-US,en;q=0.5" \
         "${url}"`;
 
-    exec(command, { timeout: 40000 }, (error, stdout, stderr) => {
+    exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
         if (error) {
-            console.error('Xəta:', stderr);
-            // Əgər Instagram yenə bloklasa, istifadəçiyə daha aydın mesaj verək
+            console.error('Xəta Detalları:', stderr);
             return res.status(500).json({ 
-                error: "Instagram bu serverin girişini müvəqqəti bloklayıb. Zəhmət olmasa 5-10 dəqiqə sonra yenidən yoxlayın və ya başqa link sınayın." 
+                error: "Platforma girişi blokladı. Render-in IP-si bloklanıb. Bir az gözləyib yenidən yoxlayın." 
             });
         }
 
