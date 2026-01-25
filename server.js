@@ -32,7 +32,11 @@ try {
 app.use(cors({
     origin: 'https://tt-instavideoindirme.free.nf', // Sizin FRONTEND domeniniz
 }));
-app.use(express.json());
+
+// ✅ Yeni: express.json() üçün limit təyin edin
+// URL üçün 10MB çox böyükdür, lakin PayloadTooLargeError-un qarşısını almaq üçün adekvatdır.
+// Real URL-lər adətən bir neçə KB-dan çox olmur.
+app.use(express.json({ limit: '10mb' })); // Limit '10mb' (10 meqabayt) olaraq təyin edildi
 
 app.get('/', (req, res) => {
     res.send('Video Yükləyici Backend API işləyir!');
@@ -52,7 +56,6 @@ app.post('/download', limiter, async (req, res) => {
 
     console.log(`Yükləmə sorğusu alındı: ${url}`);
 
-    // ✅ Yenilənmiş isValidUrl funksiyası
     const isValid = (inputUrl) => {
         try {
             const parsedUrl = new URL(inputUrl);
@@ -66,17 +69,15 @@ app.post('/download', limiter, async (req, res) => {
 
             // Daha sərt hostname və yol yoxlaması
             if (hostname.includes('instagram.com')) {
-                // Instagram üçün "/p/" (post) və ya "/reel/" yollarını yoxlayın
                 return path.startsWith('/p/') || path.startsWith('/reel/');
             } else if (hostname.includes('tiktok.com')) {
-                // TikTok üçün "/video/" yolunu yoxlayın
                 return path.startsWith('/video/');
             } else {
-                return false; // Başqa domenləri qəbul etməyin
+                return false; 
             }
         } catch (e) {
             console.error(`URL validation failed for ${inputUrl}:`, e);
-            return false; // URL parse edilə bilmirsə, etibarlı deyil
+            return false; 
         }
     };
 
@@ -89,7 +90,6 @@ app.post('/download', limiter, async (req, res) => {
     const videoFileName = `video-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.mp4`;
     const outputPath = path.join(DOWNLOADS_DIR, videoFileName);
 
-    // spawn üçün arqumentlər massivini təyin edin
     const ytDlpArgs = [
         '--force-overwrites',
         '--no-warnings',
@@ -103,7 +103,6 @@ app.post('/download', limiter, async (req, res) => {
         ytDlpArgs.unshift('--add-header', `Cookie: ${instagramCookies}`);
     }
 
-    // yt-dlp prosesi üçün timeout
     const DOWNLOAD_TIMEOUT = 120 * 1000; // 2 dəqiqə
 
     let stdoutBuffer = '';
