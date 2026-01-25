@@ -1,54 +1,88 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios'); // axios lazımdır: npm install axios
+const axios = require('axios');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Sənin RapidAPI Açarın
+const RAPIDAPI_KEY = '46e0a3a349msh2cedb9359c05d12p118f8djsnee3a38d4c958';
+
 app.post('/download', async (req, res) => {
     const { url } = req.body;
+
     if (!url) return res.status(400).json({ error: "Link daxil edin" });
 
     try {
-        if (url.includes('tiktok.com')) {
-            // TikTok üçün Bloklanmayan Pulsuz API Körpüsü
-            const response = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`);
+        // --- İNSTAGRAM ÜÇÜN ---
+        if (url.includes('instagram.com')) {
+            const options = {
+                method: 'GET',
+                url: 'https://instagram-reels-downloader-api.p.rapidapi.com/download',
+                params: { url: url },
+                headers: {
+                    'x-rapidapi-key': RAPIDAPI_KEY,
+                    'x-rapidapi-host': 'instagram-reels-downloader-api.p.rapidapi.com'
+                }
+            };
+
+            const response = await axios.request(options);
             const data = response.data;
 
-            if (data.status === 200 || data.result) {
-                return res.json({
-                    title: data.result.title || "TikTok Video",
-                    thumbnail: data.result.cover || "",
-                    url: data.result.video.noWatermark || data.result.video.url, // Filqransız link
-                    source: "tiktok"
-                });
-            }
+            // API-dən gələn cavabı (download_url) front-end-ə göndəririk
+            return res.json({
+                title: "Instagram Video",
+                thumbnail: data.thumbnail || "",
+                url: data.download_url || data.url || data.link, 
+                source: "instagram"
+            });
         } 
-        else if (url.includes('instagram.com')) {
-            // Instagram üçün Körpü (Qeyd: Instagram çox sərtdir, bu API işləməsə RapidAPI lazımdır)
-            // Hələlik ən stabil pulsuz metodlardan birini sınayırıq
-            const response = await axios.get(`https://api.api-beauty.pro/api/instagram?url=${encodeURIComponent(url)}`);
+
+        // --- TİKTOK ÜÇÜN ---
+        else if (url.includes('tiktok.com')) {
+            const options = {
+                method: 'GET',
+                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/v1/video',
+                params: { url: url },
+                headers: {
+                    'x-rapidapi-key': RAPIDAPI_KEY,
+                    'x-rapidapi-host': 'tiktok-video-downloader-api.p.rapidapi.com'
+                }
+            };
+
+            const response = await axios.request(options);
             const data = response.data;
 
-            if (data.status) {
-                return res.json({
-                    title: "Instagram Video",
-                    thumbnail: data.result.thumbnail,
-                    url: data.result.url,
-                    source: "instagram"
-                });
-            }
+            // TikTok API adətən məlumatları 'data' obyektində qaytarır
+            return res.json({
+                title: data.data?.title || "TikTok Video",
+                thumbnail: data.data?.cover || "",
+                url: data.data?.play || data.data?.download_addr || data.url,
+                source: "tiktok"
+            });
+        } 
+
+        else {
+            return res.status(400).json({ error: "Yalnız Instagram və TikTok linkləri dəstəklənir." });
         }
 
-        throw new Error("Video tapılmadı");
     } catch (error) {
-        console.error("API Xətası:", error.message);
-        res.status(500).json({ error: "Platforma (IP) blokuna görə yükləmə alınmadı. Zəhmət olmasa başqa link yoxlayın." });
+        console.error('API Xətası:', error.response ? error.response.data : error.message);
+        
+        // Əgər API 403 xətası verirsə, deməli RapidAPI-də "Subscribe" (Abunə) olmamısan
+        if (error.response && error.response.status === 403) {
+            return res.status(500).json({ error: "API girişi rədd edildi. Zəhmət olmasa RapidAPI saytında hər iki API üçün 'Free Plan'-a abunə olun." });
+        }
+
+        res.status(500).json({ 
+            error: "Video məlumatları alınarkən xəta baş verdi. Linkin düzgünlüyünü yoxlayın." 
+        });
     }
 });
 
-app.get('/', (req, res) => res.send('API Bridge is Online!'));
+// Ana səhifə testi
+app.get('/', (req, res) => res.send('Video Downloader API Bridge is Active!'));
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
