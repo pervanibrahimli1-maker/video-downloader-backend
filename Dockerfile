@@ -18,7 +18,7 @@ WORKDIR /app
 # package.json və package-lock.json fayllarını kopyalayın və asılılıqları quraşdırın
 COPY package*.json ./
 # Əgər layihənizdə `yarn` istifadə edirsinizsə, aşağıdakı sətri istifadə edin:
-RUN yarn install
+RUN npm install
 # Əks halda, `npm` istifadə edin:
 # RUN npm install
 
