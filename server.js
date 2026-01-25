@@ -26,6 +26,12 @@ app.post('/download', async (req, res) => {
             };
             const response = await axios.request(options);
             const data = response.data;
+            
+            // Əgər API upgrade-dədirsə və ya boş cavab verirsə
+            if (data.message && data.message.includes('upgrade')) {
+                return res.status(503).json({ error: "Instagram API-də hal-hazırda yenilənmə gedir. Bir az sonra yoxlayın." });
+            }
+
             return res.json({
                 title: "Instagram Video",
                 thumbnail: data.thumbnail || "",
@@ -38,8 +44,8 @@ app.post('/download', async (req, res) => {
         else if (url.includes('tiktok.com')) {
             const options = {
                 method: 'GET',
-                // Endpoint düzəldildi: Bu API-də yol adətən birbaşa kök qovluqdur
-                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/', 
+                // TikTok üçün endpoint /video olaraq dəyişdirildi
+                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/video', 
                 params: { url: url },
                 headers: {
                     'x-rapidapi-key': RAPIDAPI_KEY,
@@ -49,8 +55,12 @@ app.post('/download', async (req, res) => {
             const response = await axios.request(options);
             const data = response.data;
 
-            // TikTok API fərqli cavablar verə bilər, ona görə bir neçə variantı yoxlayırıq
-            const videoUrl = data.data?.play || data.data?.download_addr || data.video || data.url;
+            // TikTok API-dən gələn cavabı analiz edirik
+            const videoUrl = data.data?.play || data.data?.download_addr || data.url || data.video;
+
+            if (!videoUrl) {
+                return res.status(404).json({ error: "TikTok videosu tapılmadı. Linki yoxlayın." });
+            }
 
             return res.json({
                 title: data.data?.title || "TikTok Video",
@@ -60,15 +70,11 @@ app.post('/download', async (req, res) => {
             });
         }
     } catch (error) {
-        // Xətanı daha aydın görmək üçün
-        const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
-        console.error('API Xətası:', errorMsg);
+        const errorData = error.response ? error.response.data : error.message;
+        console.error('API Xətası:', JSON.stringify(errorData));
         
-        if (errorMsg.includes('not subscribed')) {
-            return res.status(500).json({ error: "API-yə abunə olmamısınız! RapidAPI saytından Free Plan-ı seçin." });
-        }
-        
-        res.status(500).json({ error: "Video tapılmadı və ya API xətası baş verdi." });
+        // Əgər endpoint yoxdursa, başqa bir variantı (v1/video) sınamaq olar
+        res.status(500).json({ error: "Video tapılmadı və ya API xətası baş verdi. RapidAPI-də abunə olduğunuzdan əmin olun." });
     }
 });
 
