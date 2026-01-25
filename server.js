@@ -1,60 +1,48 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
 const { exec } = require('child_process');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.use(helmet());
 app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 100, 
-    message: { error: "Çox sayda istək göndərdiniz." }
-});
-app.use('/download', limiter);
-
-const validateUrl = (url) => {
-    const tiktokRegex = /^(https?:\/\/)?((vm|vt|v|www)\.)?tiktok\.com\/.*$/;
-    const instaRegex = /^(https?:\/\/)?(www\.)?instagram\.com\/(p|reels|reel|tv)\/.*$/;
-    return tiktokRegex.test(url) || instaRegex.test(url);
-};
-
 app.post('/download', (req, res) => {
-    const { url } = req.body;
+    let { url } = req.body;
 
-    if (!url || !validateUrl(url)) {
-        return res.status(400).json({ error: "Etibarsız link!" });
-    }
+    if (!url) return res.status(400).json({ error: "Link daxil edin" });
 
-    // DÜZƏLİŞLƏR BURADADIR:
-    // 1. --no-check-certificate (Tərcümə edilməməlidir)
-    // 2. --user-agent (Instagram blokunu keçmək üçün brauzer kimi görünmək)
-    // 3. --add-header (Əlavə təhlükəsizlik)
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    const command = `yt-dlp -j --no-check-certificate --user-agent "${userAgent}" --add-header "Accept-Language:en-US,en;q=0.9" "${url}"`;
+    // 1. Linki təmizləmək (Sual işarəsindən sonrakı izləmə kodlarını silirik)
+    url = url.split('?')[0];
+
+    // 2. Çox güclü User-Agent və Instagram-ı aldatmaq üçün parametrlər
+    // --force-overwrites və --no-playlist əlavə edildi
+    const command = `yt-dlp -j --no-check-certificate \
+        --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1" \
+        --add-header "Referer:https://www.instagram.com/" \
+        --add-header "Accept-Language:en-US,en;q=0.9" \
+        "${url}"`;
 
     exec(command, { timeout: 40000 }, (error, stdout, stderr) => {
         if (error) {
-            console.error(`Xəta detalları: ${stderr}`);
+            console.error('Xəta:', stderr);
+            // Əgər Instagram yenə bloklasa, istifadəçiyə daha aydın mesaj verək
             return res.status(500).json({ 
-                error: "Instagram/TikTok girişi blokladı. Bir az sonra yenidən yoxlayın və ya linkin açıq olduğundan əmin olun." 
+                error: "Instagram bu serverin girişini müvəqqəti bloklayıb. Zəhmət olmasa 5-10 dəqiqə sonra yenidən yoxlayın və ya başqa link sınayın." 
             });
         }
 
         try {
-            const videoData = JSON.parse(stdout);
+            const data = JSON.parse(stdout);
             res.json({
-                title: videoData.title,
-                thumbnail: videoData.thumbnail,
-                url: videoData.url,
-                source: videoData.extractor
+                title: data.title,
+                thumbnail: data.thumbnail,
+                url: data.url,
+                source: data.extractor
             });
-        } catch (parseError) {
-            res.status(500).json({ error: "Məlumat oxuna bilmədi." });
+        } catch (e) {
+            res.status(500).json({ error: "Məlumat emal edilə bilmədi." });
         }
     });
 });
