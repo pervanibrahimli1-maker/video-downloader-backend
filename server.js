@@ -1,57 +1,54 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
-const fs = require('fs');
+const axios = require('axios'); // axios lazımdır: npm install axios
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.post('/download', (req, res) => {
-    let { url } = req.body;
+app.post('/download', async (req, res) => {
+    const { url } = req.body;
     if (!url) return res.status(400).json({ error: "Link daxil edin" });
 
-    url = url.split('?')[0];
-    const isInstagram = url.includes('instagram.com');
+    try {
+        if (url.includes('tiktok.com')) {
+            // TikTok üçün Bloklanmayan Pulsuz API Körpüsü
+            const response = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`);
+            const data = response.data;
 
-    const cookiePath = './cookies.txt';
-    let cookieParam = '';
+            if (data.status === 200 || data.result) {
+                return res.json({
+                    title: data.result.title || "TikTok Video",
+                    thumbnail: data.result.cover || "",
+                    url: data.result.video.noWatermark || data.result.video.url, // Filqransız link
+                    source: "tiktok"
+                });
+            }
+        } 
+        else if (url.includes('instagram.com')) {
+            // Instagram üçün Körpü (Qeyd: Instagram çox sərtdir, bu API işləməsə RapidAPI lazımdır)
+            // Hələlik ən stabil pulsuz metodlardan birini sınayırıq
+            const response = await axios.get(`https://api.api-beauty.pro/api/instagram?url=${encodeURIComponent(url)}`);
+            const data = response.data;
 
-    // Instagram üçün cookies yoxla
-    if (isInstagram && fs.existsSync(cookiePath)) {
-        cookieParam = `--cookies ${cookiePath}`;
+            if (data.status) {
+                return res.json({
+                    title: "Instagram Video",
+                    thumbnail: data.result.thumbnail,
+                    url: data.result.url,
+                    source: "instagram"
+                });
+            }
+        }
+
+        throw new Error("Video tapılmadı");
+    } catch (error) {
+        console.error("API Xətası:", error.message);
+        res.status(500).json({ error: "Platforma (IP) blokuna görə yükləmə alınmadı. Zəhmət olmasa başqa link yoxlayın." });
     }
-
-    // TikTok və Instagram üçün ən müasir Bypass komandası
-    // --client-certificate yox, --impersonate-browser istifadə edirik (Docker yeniləndi deyə işləyəcək)
-    const command = `yt-dlp -j --no-check-certificate \
-        ${cookieParam} \
-        --force-ipv4 \
-        --geo-bypass \
-        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" \
-        "${url}"`;
-
-    exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
-        if (error) {
-            console.error('Log Detalı:', stderr);
-            return res.status(500).json({ 
-                error: "Platforma girişi rədd etdi. Instagram üçün Cookies yenilənməli, TikTok üçün isə server IP-si dəyişməlidir." 
-            });
-        }
-
-        try {
-            const data = JSON.parse(stdout);
-            res.json({
-                title: data.title || "Video",
-                thumbnail: data.thumbnail,
-                url: data.url,
-                source: data.extractor
-            });
-        } catch (e) {
-            res.status(500).json({ error: "Məlumat oxuna bilmədi." });
-        }
-    });
 });
+
+app.get('/', (req, res) => res.send('API Bridge is Online!'));
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
