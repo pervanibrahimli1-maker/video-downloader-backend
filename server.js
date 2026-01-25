@@ -25,17 +25,15 @@ app.post('/download', async (req, res) => {
                 }
             };
             const response = await axios.request(options);
-            const data = response.data;
             
-            // Əgər API upgrade-dədirsə və ya boş cavab verirsə
-            if (data.message && data.message.includes('upgrade')) {
-                return res.status(503).json({ error: "Instagram API-də hal-hazırda yenilənmə gedir. Bir az sonra yoxlayın." });
+            // Əgər Instagram hələ də təmirdədirsə
+            if (response.data.success === false || response.data.message?.includes('upgrade')) {
+                return res.status(503).json({ error: "İnstagram API təmirdədir, başqa API-yə keçməlisiniz." });
             }
 
             return res.json({
                 title: "Instagram Video",
-                thumbnail: data.thumbnail || "",
-                url: data.download_url || data.url || data.link,
+                url: response.data.download_url || response.data.url,
                 source: "instagram"
             });
         } 
@@ -44,8 +42,8 @@ app.post('/download', async (req, res) => {
         else if (url.includes('tiktok.com')) {
             const options = {
                 method: 'GET',
-                // TikTok üçün endpoint /video olaraq dəyişdirildi
-                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/video', 
+                // Endpoint /v1/video olaraq dəyişdirildi (Düzgün yol çox vaxt budur)
+                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/v1/video', 
                 params: { url: url },
                 headers: {
                     'x-rapidapi-key': RAPIDAPI_KEY,
@@ -55,26 +53,28 @@ app.post('/download', async (req, res) => {
             const response = await axios.request(options);
             const data = response.data;
 
-            // TikTok API-dən gələn cavabı analiz edirik
-            const videoUrl = data.data?.play || data.data?.download_addr || data.url || data.video;
+            // TikTok məlumat formatı API-dən API-yə dəyişir, bir neçə variantı yoxlayırıq:
+            const videoUrl = data.data?.play || data.data?.download_addr || data.url;
 
             if (!videoUrl) {
-                return res.status(404).json({ error: "TikTok videosu tapılmadı. Linki yoxlayın." });
+                return res.status(404).json({ error: "TikTok videosu tapılmadı. API cavabını yoxlayın." });
             }
 
             return res.json({
                 title: data.data?.title || "TikTok Video",
-                thumbnail: data.data?.cover || "",
                 url: videoUrl,
                 source: "tiktok"
             });
         }
     } catch (error) {
-        const errorData = error.response ? error.response.data : error.message;
-        console.error('API Xətası:', JSON.stringify(errorData));
+        console.error('API Xətası:', error.response?.data || error.message);
+        const msg = error.response?.data?.message || "";
         
-        // Əgər endpoint yoxdursa, başqa bir variantı (v1/video) sınamaq olar
-        res.status(500).json({ error: "Video tapılmadı və ya API xətası baş verdi. RapidAPI-də abunə olduğunuzdan əmin olun." });
+        if (msg.includes("Endpoint")) {
+            return res.status(404).json({ error: "API yolu (Endpoint) tapılmadı. RapidAPI-də düzgün endpoint-i seçin." });
+        }
+        
+        res.status(500).json({ error: "Sistem xətası və ya API yenilənməsi." });
     }
 });
 
