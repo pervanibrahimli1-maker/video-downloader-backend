@@ -32,10 +32,6 @@ try {
 app.use(cors({
     origin: 'https://tt-instavideoindirme.free.nf', // Sizin FRONTEND domeniniz
 }));
-
-// ✅ Yeni: express.json() üçün limit təyin edin
-// URL üçün 10MB çox böyükdür, lakin PayloadTooLargeError-un qarşısını almaq üçün adekvatdır.
-// Real URL-lər adətən bir neçə KB-dan çox olmur.
 app.use(express.json({ limit: '10mb' })); // Limit '10mb' (10 meqabayt) olaraq təyin edildi
 
 app.get('/', (req, res) => {
@@ -56,6 +52,7 @@ app.post('/download', limiter, async (req, res) => {
 
     console.log(`Yükləmə sorğusu alındı: ${url}`);
 
+    // ✅ Yenilənmiş isValidUrl funksiyası (TikTok üçün daha elastik)
     const isValid = (inputUrl) => {
         try {
             const parsedUrl = new URL(inputUrl);
@@ -69,15 +66,18 @@ app.post('/download', limiter, async (req, res) => {
 
             // Daha sərt hostname və yol yoxlaması
             if (hostname.includes('instagram.com')) {
+                // Instagram üçün "/p/" (post), "/reel/" yollarını yoxlayın
                 return path.startsWith('/p/') || path.startsWith('/reel/');
             } else if (hostname.includes('tiktok.com')) {
-                return path.startsWith('/video/');
+                // TikTok üçün müxtəlif video yollarını qəbul edin
+                // Əsasən /video/ və ya qısa linklər üçün /v/
+                return path.startsWith('/video/') || path.startsWith('/v/');
             } else {
-                return false; 
+                return false; // Başqa domenləri qəbul etməyin
             }
         } catch (e) {
             console.error(`URL validation failed for ${inputUrl}:`, e);
-            return false; 
+            return false; // URL parse edilə bilmirsə, etibarlı deyil
         }
     };
 
