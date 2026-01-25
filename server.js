@@ -19,7 +19,7 @@ try {
 
 // Middleware
 app.use(cors({
-    origin: '*', // İstehsalda bunu dəyiş
+    origin: 'https://tt-instavideoindirme.free.nf', // İstehsalda bunu dəyiş
 }));
 app.use(express.json());
 
@@ -100,3 +100,4 @@ setTimeout(() => {
         fs.unlink(outputPath, () => {});
     }
 }, 120000);
+
