@@ -1,70 +1,48 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const RAPIDAPI_KEY = '46e0a3a349msh2cedb9359c05d12p118f8djsnee3a38d4c958';
-
-// Əsas yoxlama yolu (Brauzerdə açanda görünməlidir)
 app.get('/', (req, res) => {
-    res.send('Backend Server 8000 portunda işləyir və hazırdır!');
+    res.send('Backend (yt-dlp) 8000 portunda aktivdir!');
 });
 
-// Download yolu
-app.post('/download', async (req, res) => {
+app.post('/download', (req, res) => {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ error: "Link daxil edin" });
 
-    try {
-        if (url.includes('instagram.com')) {
-            const options = {
-                method: 'GET',
-                url: 'https://instagram-reels-downloader-api.p.rapidapi.com/download',
-                params: { url: url },
-                headers: {
-                    'x-rapidapi-key': RAPIDAPI_KEY,
-                    'x-rapidapi-host': 'instagram-reels-downloader-api.p.rapidapi.com'
-                }
-            };
-            const response = await axios.request(options);
-            return res.json({
-                title: "Instagram Video",
-                url: response.data.download_url || response.data.url || response.data.link,
-                source: "instagram"
-            });
-        } 
-        else if (url.includes('tiktok.com')) {
-            const options = {
-                method: 'GET',
-                // TikTok üçün alternativ bir endpoint sınayırıq
-                url: 'https://tiktok-video-downloader-api.p.rapidapi.com/v1/video', 
-                params: { url: url },
-                headers: {
-                    'x-rapidapi-key': RAPIDAPI_KEY,
-                    'x-rapidapi-host': 'tiktok-video-downloader-api.p.rapidapi.com'
-                }
-            };
-            const response = await axios.request(options);
-            const data = response.data;
-            const videoUrl = data.data?.play || data.data?.download_addr || data.url;
+    if (!url) {
+        return res.status(400).json({ error: "Zəhmət olmasa link daxil edin" });
+    }
 
-            if (!videoUrl) throw new Error("Video linki tapılmadı");
+    // yt-dlp komandası: -g (linki gətir), -j (bütün məlumatları JSON kimi gətir)
+    // Instagram və TikTok üçün bəzi xüsusi sazlamalar əlavə edirik
+    const command = `yt-dlp -g -f "best" --no-check-certificates "${url}"`;
 
-            return res.json({
-                title: data.data?.title || "TikTok Video",
-                url: videoUrl,
-                source: "tiktok"
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`Xəta: ${stderr}`);
+            return res.status(500).json({ 
+                error: "Video tapılmadı və ya sayt girişi blokladı.",
+                details: stderr 
             });
         }
-    } catch (error) {
-        console.error('API Xətası:', error.response?.data || error.message);
-        res.status(500).json({ error: "Video tapılmadı. RapidAPI abunəliyinizi yoxlayın." });
-    }
+
+        const videoUrl = stdout.trim();
+        
+        if (!videoUrl) {
+            return res.status(404).json({ error: "Video linki əldə edilə bilmədi." });
+        }
+
+        res.json({
+            title: "Yüklənən Video",
+            url: videoUrl,
+            source: url.includes('tiktok') ? "tiktok" : "instagram"
+        });
+    });
 });
 
-// Koyeb üçün dinamik port və ya 8000
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
+app.listen(PORT, () => console.log(`Server ${PORT} portunda (API KEY-SİZ) işləyir.`));
