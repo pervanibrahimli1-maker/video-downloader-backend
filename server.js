@@ -17,9 +17,17 @@ app.post('/download', (req, res) => {
         return res.status(400).json({ error: "Zəhmət olmasa link daxil edin" });
     }
 
-    // yt-dlp komandası: -g (linki gətir), -j (bütün məlumatları JSON kimi gətir)
-    // Instagram və TikTok üçün bəzi xüsusi sazlamalar əlavə edirik
-    const command = `yt-dlp -g -f "best" --no-check-certificates "${url}"`;
+    // TikTok və Instagram bloklarını keçmək üçün təkmilləşdirilmiş komanda
+    // --user-agent və --add-header çox vacibdir
+    const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    
+    // Əgər cookies.txt dolu olarsa, komandaya --cookies cookies.txt əlavə edə bilərsiniz
+    const command = `yt-dlp -g -f "best" \
+        --no-check-certificates \
+        --user-agent "${userAgent}" \
+        --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8" \
+        --add-header "Accept-Language:en-US,en;q=0.9" \
+        "${url}"`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -44,5 +52,6 @@ app.post('/download', (req, res) => {
     });
 });
 
+// Portu 8000 olaraq qeyd etdik (Dockerfile-dakı EXPOSE ilə eyni olmalıdır)
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT} portunda (API KEY-SİZ) işləyir.`));
+app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
