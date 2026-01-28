@@ -2,6 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const { exec, spawn } = require('child_process');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
+
+// Mövcud olmayan bütün linklər üçün 404 səhifəsini göstər
+app.use((req, res) => {
+    res.status(404).sendFile(path.join(__dirname, '404.html'));
+});
 
 const app = express();
 
@@ -72,3 +78,4 @@ app.get('/download-video', (req, res) => {
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
+
