@@ -1,81 +1,70 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path'); // Bu sətir vacibdir!
 const { exec, spawn } = require('child_process');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
 
-// Mövcud olmayan bütün linklər üçün 404 səhifəsini göstər
-app.use((req, res) => {
-    res.status(404).sendFile(path.join(__dirname, '404.html'));
-});
+const app = express(); // ƏVƏZİNDƏ BURADA YARANIR
 
-const app = express();
-
-// 1. QORUNMA: Saytın çökməməsi üçün bir IP-dən gələn sorğuları limitləyirik
+// 1. QORUNMA
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 dəqiqə
-    max: 25, // Bir adam 15 dəqiqədə maks 50 sorğu göndərə bilər
-    message: { error: "Çox sayda sorğu göndərildi, bir az gözləyin." }
+    windowMs: 15 * 60 * 1000,
+    max: 50,
+    message: { error: "Çox sayda sorğu göndərildi." }
 });
 app.use(limiter);
-
 app.use(cors());
 app.use(express.json());
 
+// 2. ANA SƏHİFƏ
 app.get('/', (req, res) => {
-    res.send('Video Downloader API is Secure and Running!');
+    res.send('Server aktivdir!');
 });
 
-// VİDEO MƏLUMATLARINI GƏTİRMƏK
+// 3. VİDEO MƏLUMATLARINI GƏTİRMƏK
 app.get('/info', (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).json({ error: "Link daxil edilməyib" });
 
     const command = `yt-dlp -j --no-check-certificates "${videoUrl}"`;
-
     exec(command, (error, stdout, stderr) => {
-        if (error) {
-            return res.status(500).json({ error: "Video tapılmadı və ya keçərsiz link." });
-        }
+        if (error) return res.status(500).json({ error: "Video tapılmadı" });
         try {
             const data = JSON.parse(stdout);
             res.json({
                 title: data.title || "Video",
                 thumbnail: data.thumbnail || "",
-                description: data.description ? data.description.substring(0, 50) : "Açıqlama yoxdur"
+                description: data.description ? data.description.substring(0, 50) : ""
             });
         } catch (e) {
-            res.status(500).json({ error: "Məlumat oxunarkən xəta baş verdi." });
+            res.status(500).json({ error: "Məlumat xətası" });
         }
     });
 });
 
-// VİDEONU PROXY İLƏ YÜKLƏMƏK (Filiqransız və Səsli)
+// 4. VİDEO YÜKLƏMƏK
 app.get('/download-video', (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).send("Link daxil edilməyib");
 
-    // Safari və Mobil üçün məcburi yükləmə başlıqları
-    res.setHeader('Content-Disposition', 'attachment; filename="video_by_parvan.mp4"');
-    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+    res.setHeader('Content-Type', 'video/mp4');
 
-    // '-f best' həm səs həm görüntünün birlikdə olduğu tək MP4 faylını götürür
     const ytDlp = spawn('yt-dlp', [
-        '-f', 'best', 
+        '-f', 'best',
         '--no-check-certificates',
-        '--add-header', 'Referer:https://www.tiktok.com/',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        '-o', '-', 
+        '-o', '-',
         videoUrl
     ]);
-
     ytDlp.stdout.pipe(res);
-
-    ytDlp.on('close', (code) => {
-        if (code !== 0) console.error(`Yükləmə xətası, kod: ${code}`);
-    });
 });
 
+// 5. 404 XƏTA SƏHİFƏSİ (MÜTLƏQ AXIRDA OLMALIDIR)
+// Əgər yuxarıdakı linklərdən heç biri tutmasa, bura işə düşəcək
+app.use((req, res) => {
+    res.status(404).sendFile(path.join(__dirname, '404.html'));
+});
+
+// 6. SERVERİ BAŞLATMAQ
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
-
