@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim 
 
-# Sistem paketlərini və yt-dlp-ni quraşdırırıq
+# Sistem paketlərini və Python/FFmpeg quraşdırırıq
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -10,15 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# yt-dlp-ni birbaşa quraşdırırıq
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+# yt-dlp-ni pip vasitəsilə ən son versiyada quraşdırırıq
+RUN python3 -m pip install --no-cache-dir --break-system-packages -U yt-dlp
 
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 
-EXPOSE 10000 
+# Portu 8000-də sabitləyirik
+EXPOSE 8000
 
 CMD ["node", "server.js"]
