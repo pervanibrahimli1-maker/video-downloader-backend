@@ -1,51 +1,59 @@
 const express = require('express');
 const cors = require('cors');
 const { exec, spawn } = require('child_process');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+// 1. QORUNMA: Saytın çökməməsi üçün bir IP-dən gələn sorğuları limitləyirik
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 dəqiqə
+    max: 25, // Bir adam 15 dəqiqədə maks 50 sorğu göndərə bilər
+    message: { error: "Çox sayda sorğu göndərildi, bir az gözləyin." }
+});
+app.use(limiter);
+
 app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.send('Server is up and running!');
+    res.send('Video Downloader API is Secure and Running!');
 });
 
 // VİDEO MƏLUMATLARINI GƏTİRMƏK
 app.get('/info', (req, res) => {
     const videoUrl = req.query.url;
-    if (!videoUrl) return res.status(400).json({ error: "URL lazımdır" });
+    if (!videoUrl) return res.status(400).json({ error: "Link daxil edilməyib" });
 
-    // -j ilə məlumatları alırıq
     const command = `yt-dlp -j --no-check-certificates "${videoUrl}"`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
-            return res.status(500).json({ error: "Video tapılmadı" });
+            return res.status(500).json({ error: "Video tapılmadı və ya keçərsiz link." });
         }
         try {
             const data = JSON.parse(stdout);
             res.json({
                 title: data.title || "Video",
                 thumbnail: data.thumbnail || "",
-                description: data.description ? data.description.substring(0, 100) : ""
+                description: data.description ? data.description.substring(0, 50) : "Açıqlama yoxdur"
             });
         } catch (e) {
-            res.status(500).json({ error: "Məlumat oxunmadı" });
+            res.status(500).json({ error: "Məlumat oxunarkən xəta baş verdi." });
         }
     });
 });
 
-// VİDEONU YÜKLƏMƏK (ƏSAS HİSSƏ)
+// VİDEONU PROXY İLƏ YÜKLƏMƏK (Filiqransız və Səsli)
 app.get('/download-video', (req, res) => {
     const videoUrl = req.query.url;
-    if (!videoUrl) return res.status(400).send("URL lazımdır");
+    if (!videoUrl) return res.status(400).send("Link daxil edilməyib");
 
-    // Fayl başlıqları
-    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
-    res.setHeader('Content-Type', 'video/mp4');
+    // Safari və Mobil üçün məcburi yükləmə başlıqları
+    res.setHeader('Content-Disposition', 'attachment; filename="video_by_parvan.mp4"');
+    res.setHeader('Content-Type', 'application/octet-stream');
 
-    // DİQQƏT: Burada yalnız '-f best' istifadə edirik. 
-    // Bu, səs və videonun artıq BİRLƏŞMİŞ olduğu ən yaxşı tək faylı götürür.
+    // '-f best' həm səs həm görüntünün birlikdə olduğu tək MP4 faylını götürür
     const ytDlp = spawn('yt-dlp', [
         '-f', 'best', 
         '--no-check-certificates',
@@ -57,17 +65,10 @@ app.get('/download-video', (req, res) => {
 
     ytDlp.stdout.pipe(res);
 
-    ytDlp.stderr.on('data', (data) => {
-        console.log(`yt-dlp log: ${data}`);
-    });
-
     ytDlp.on('close', (code) => {
-        if (code !== 0) {
-            console.error(`Xəta kodu: ${code}`);
-            if (!res.headersSent) res.status(500).send("Yükləmə xətası");
-        }
+        if (code !== 0) console.error(`Yükləmə xətası, kod: ${code}`);
     });
 });
 
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir`));
+app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
