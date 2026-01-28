@@ -1,57 +1,56 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.send('Backend (yt-dlp) 8000 portunda aktivdir!');
+    res.send('Backend aktivdir! Videonu yükləmək üçün /download-video istifadə edin.');
 });
 
-app.post('/download', (req, res) => {
-    const { url } = req.body;
+// BU ƏSAS FUNKSİYADIR: Videonu server üzərindən ötürür
+app.get('/download-video', (req, res) => {
+    const videoUrl = req.query.url;
 
-    if (!url) {
-        return res.status(400).json({ error: "Zəhmət olmasa link daxil edin" });
+    if (!videoUrl) {
+        return res.status(400).send("Video linki lazımdır.");
     }
 
-    // TikTok və Instagram bloklarını keçmək üçün təkmilləşdirilmiş komanda
-    // --user-agent və --add-header çox vacibdir
+    console.log("Yüklənilir:", videoUrl);
+
+    // Brauzerə fayl kimi yüklənməsini tapşırırıq
+    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+    res.setHeader('Content-Type', 'video/mp4');
+
     const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-    
-    // Əgər cookies.txt dolu olarsa, komandaya --cookies cookies.txt əlavə edə bilərsiniz
-    const command = `yt-dlp -g -f "best" \
-        --no-check-certificates \
-        --user-agent "${userAgent}" \
-        --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8" \
-        --add-header "Accept-Language:en-US,en;q=0.9" \
-        "${url}"`;
 
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`Xəta: ${stderr}`);
-            return res.status(500).json({ 
-                error: "Video tapılmadı və ya sayt girişi blokladı.",
-                details: stderr 
-            });
+    // yt-dlp ilə videonu birbaşa stdout-a (axına) çıxarırıq
+    const ytDlp = spawn('yt-dlp', [
+        '-f', 'bestvideo+bestaudio/best',
+        '--no-check-certificates',
+        '--user-agent', userAgent,
+        '-o', '-', // Videonu fayla yox, birbaşa çıxışa (stream) ver
+        videoUrl
+    ]);
+
+    // Videonu hissə-hissə istifadəçiyə göndər
+    ytDlp.stdout.pipe(res);
+
+    ytDlp.stderr.on('data', (data) => {
+        console.error(`Log: ${data}`);
+    });
+
+    ytDlp.on('close', (code) => {
+        if (code !== 0) {
+            console.error(`yt-dlp xəta ilə bitdi: ${code}`);
+            if (!res.headersSent) {
+                res.status(500).send("Video yüklənərkən xəta baş verdi.");
+            }
         }
-
-        const videoUrl = stdout.trim();
-        
-        if (!videoUrl) {
-            return res.status(404).json({ error: "Video linki əldə edilə bilmədi." });
-        }
-
-        res.json({
-            title: "Yüklənən Video",
-            url: videoUrl,
-            source: url.includes('tiktok') ? "tiktok" : "instagram"
-        });
     });
 });
 
-// Portu 8000 olaraq qeyd etdik (Dockerfile-dakı EXPOSE ilə eyni olmalıdır)
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
+app.listen(PORT, () => console.log(`Server ${PORT} portunda PROXY rejimində işləyir.`));
