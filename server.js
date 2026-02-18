@@ -19,7 +19,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const frontendOrigin = process.env.FRONTEND_ORIGIN || 'https://sizin-video-downloader-frontend.ct.ws'; 
+const frontendOrigin = process.env.FRONTEND_ORIGIN || 'https://tt-instavideoindirme.free.nf'; 
 const allowedOrigins = [
     frontendOrigin,
     'http://localhost:5500', 
@@ -220,3 +220,4 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Server ${PORT}-da işləyir`));
+
