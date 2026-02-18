@@ -1,29 +1,23 @@
-// server.js (Yenilənmiş versiya - Mobil Yükləmələr üçün daha optimal)
-
-require('dotenv').config(); 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const { exec, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const rateLimit = require('express-rate-limit');
-const axios = require('axios'); 
 
 const app = express();
 
-app.use(express.static(__dirname)); 
-
+// 1. Təhlükəsizlik və Limitlər
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 100, 
-    message: { error: "Çox sayda sorğu göndərmisiniz, zəhmət olmasa bir az gözləyin." }
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: "Çox sayda sorğu göndərilib, bir az gözləyin." }
 });
 app.use(limiter);
 
-const frontendOrigin = process.env.FRONTEND_ORIGIN || 'https://tt-instavideoindirme.free.nf'; 
 const allowedOrigins = [
-    frontendOrigin,
-    'http://localhost:5500', 
-    'http://127.0.0.1:5500', 
+    process.env.FRONTEND_ORIGIN || 'https://tt-instavideoindirme.free.nf',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500'
 ];
 
 app.use(cors({
@@ -31,193 +25,107 @@ app.use(cors({
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            callback(new Error('Bu domenə icazə verilmir (Not allowed by CORS)'));
+            callback(new Error('CORS icazə vermir.'));
         }
-    },
-    methods: ['GET'], 
-    allowedHeaders: ['Content-Type'],
+    }
 }));
 
 app.use(express.json());
 
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-
-const TIKTOK_RAPIDAPI_HOST = 'tiktok-download-video1.p.rapidapi.com';
-const INSTAGRAM_REELS_RAPIDAPI_HOST = 'instagram-reels-downloader-api.p.rapidapi.com';
-
-app.get('/', (req, res) => {
-    res.send('Video Downloader Server aktivdir! Yükləmək üçün /info və ya /download-video endpointlərindən istifadə edin.');
-});
-
-function getPlatform(url) {
-    if (url.includes('tiktok.com')) {
-        return 'tiktok';
-    }
-    if (url.includes('instagram.com/reel')) {
-        return 'instagram_reel';
-    }
-    return 'other'; 
-}
-
-// Video məlumatlarını (və birbaşa yükləmə linkini) gətirən endpoint
+// 2. Video Məlumatlarını gətirən Endpoint (/info)
 app.get('/info', async (req, res) => {
     const videoUrl = req.query.url;
-    if (!videoUrl) {
-        return res.status(400).json({ error: "URL lazımdır." });
-    }
+    if (!videoUrl) return res.status(400).json({ error: "URL daxil edilməyib." });
 
-    const platform = getPlatform(videoUrl);
-    let title = 'Başlıq Tapılmadı';
-    let thumbnail = '';
-    let directDownloadUrl = null; // Yeni əlavə olundu
+    // yt-dlp vasitəsilə bütün JSON məlumatlarını alırıq
+    const ytDlp = spawn('yt-dlp', [
+        '--dump-json',
+        '--no-check-certificates',
+        videoUrl
+    ]);
 
-    // RapidAPI açarı varsa və platforma dəstəklənirsə, RapidAPI-dən məlumatları al
-    if (RAPIDAPI_KEY && (platform === 'tiktok' || platform === 'instagram_reel')) {
-        try {
-            let options = {};
-            if (platform === 'tiktok') {
-                options = {
-                    method: 'GET',
-                    url: `https://${TIKTOK_RAPIDAPI_HOST}/getTiktokVideoInfo`, 
-                    params: { url: videoUrl },
-                    headers: {
-                        'x-rapidapi-key': RAPIDAPI_KEY,
-                        'x-rapidapi-host': TIKTOK_RAPIDAPI_HOST
-                    }
-                };
-                const response = await axios.request(options);
-                const rapidApiData = response.data;
-                
-                // TikTok API cavab strukturunu BURADA DƏQİQLƏŞDİRİN
-                title = rapidApiData.data?.title || 'TikTok Video Başlığı Tapılmadı';
-                thumbnail = rapidApiData.data?.thumbnail_url || '';
-                directDownloadUrl = rapidApiData.data?.download_url || null; // Birbaşa linki götür
+    let stdoutData = '';
+    let stderrData = '';
 
-            } else if (platform === 'instagram_reel') {
-                options = {
-                    method: 'GET',
-                    url: `https://${INSTAGRAM_REELS_RAPIDAPI_HOST}/download`, 
-                    params: { url: videoUrl },
-                    headers: {
-                        'x-rapidapi-key': RAPIDAPI_KEY,
-                        'x-rapidapi-host': INSTAGRAM_REELS_RAPIDAPI_HOST
-                    }
-                };
-                const response = await axios.request(options);
-                const rapidApiData = response.data;
-                
-                // Instagram Reels API cavab strukturunu BURADA DƏQİQLƏŞDİRİN
-                title = rapidApiData.title || 'Instagram Reel Başlığı Tapılmadı'; 
-                thumbnail = rapidApiData.thumbnail_url || ''; 
-                directDownloadUrl = rapidApiData.download_url || rapidApiData.video_url || null; // Birbaşa linki götür
-            }
-            // RapidAPI-dən məlumatlar uğurlu gəlibsə, cavabı göndər
-            return res.json({ title, thumbnail, directDownloadUrl });
+    ytDlp.stdout.on('data', (data) => { stdoutData += data; });
+    ytDlp.stderr.on('data', (data) => { stderrData += data; });
 
-        } catch (rapidApiError) {
-            console.warn(`RapidAPI for ${platform} failed: ${rapidApiError.message}. Falling back to yt-dlp for info.`);
-            // RapidAPI uğursuz olarsa, yt-dlp-yə keçirik, amma directDownloadUrl null qalacaq
-        }
-    }
-
-    // Əgər RapidAPI istifadə olunmayıbsa və ya uğursuz olubsa, yt-dlp-dən istifadə et
-    const command = `yt-dlp -j --no-check-certificates "${videoUrl}"`;
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`yt-dlp info error: ${stderr}`);
-            if (stderr.includes('Unsupported URL')) {
-                return res.status(400).json({ error: "Dəstəklənməyən video URL-i." });
-            }
-            if (stderr.includes('Private video') || stderr.includes('This video is unavailable')) {
-                return res.status(403).json({ error: "Video tapılmadı və ya özəldir." });
-            }
-            return res.status(500).json({ error: "Video məlumatları gətirilərkən xəta baş verdi." });
+    ytDlp.on('close', (code) => {
+        if (code !== 0) {
+            console.error("yt-dlp Error:", stderrData);
+            return res.status(400).json({ error: "Video məlumatları alınmadı. Linki yoxlayın." });
         }
 
         try {
-            const videoInfo = JSON.parse(stdout);
-            title = videoInfo.title;
-            thumbnail = videoInfo.thumbnail || (videoInfo.thumbnails && videoInfo.thumbnails.length > 0 ? videoInfo.thumbnails[0].url : '');
-            // yt-dlp birbaşa yükləmə linki vermir, stream edir, ona görə null qalır
-            res.json({ title, thumbnail, directDownloadUrl: null }); 
-        } catch (parseError) {
-            console.error(`yt-dlp JSON parse error: ${parseError.message}`);
-            return res.status(500).json({ error: "Video məlumatları işlənərkən xəta baş verdi." });
+            const info = JSON.parse(stdoutData);
+            res.json({
+                title: info.title || "Başlıq yoxdur",
+                thumbnail: info.thumbnail || "",
+                uploader: info.uploader || info.channel || info.uploader_id || "Naməlum",
+                duration: info.duration_string || "0:00",
+                views: info.view_count ? info.view_count.toLocaleString() : "0",
+                platform: info.extractor_key || "Video",
+                description: info.description ? info.description.substring(0, 100) + "..." : "Açıqlama yoxdur."
+            });
+        } catch (err) {
+            res.status(500).json({ error: "Məlumat emal edilərkən xəta baş verdi." });
         }
     });
 });
 
-// Videonu yalnız yt-dlp vasitəsilə stream etmək endpointi
+// 3. Videonu MP4 (Səs + Görüntü) yükləyən Endpoint (/download-video)
 app.get('/download-video', (req, res) => {
     const videoUrl = req.query.url;
-    if (!videoUrl) {
-        return res.status(400).json({ error: "URL lazımdır." });
-    }
+    if (!videoUrl) return res.status(400).json({ error: "URL lazımdır." });
 
-    // Əvvəlcə video məlumatlarını alırıq ki, fayl adını təyin edə bilək
-    const infoCommand = `yt-dlp -j --no-check-certificates "${videoUrl}"`;
-    exec(infoCommand, (infoError, infoStdout, infoStderr) => {
-        if (infoError) {
-            console.error(`yt-dlp download-info error: ${infoStderr}`);
-            if (!res.headersSent) {
-                return res.status(500).json({ error: "Video yükləmə məlumatları alınarkən xəta baş verdi." });
-            }
-            return;
-        }
+    // Fayl adını təyin etmək üçün qısa bir meta-data alırıq
+    const getFileName = spawn('yt-dlp', ['--get-filename', '-o', '%(title)s.%(ext)s', videoUrl]);
+    
+    let rawFileName = 'video.mp4';
+    getFileName.stdout.on('data', (data) => {
+        rawFileName = data.toString().trim();
+    });
 
-        let filename = "video.mp4";
-        try {
-            const videoInfo = JSON.parse(infoStdout);
-            // Fayl adını URL-kodlaşdırın ki, boşluqlar və xüsusi simvallar problem yaratmasın
-            filename = encodeURIComponent(videoInfo.title) + '.' + (videoInfo.ext || 'mp4');
-        } catch (parseError) {
-            console.warn(`Filename parse error from yt-dlp, using default: ${parseError.message}`);
-        }
+    getFileName.on('close', () => {
+        // Təhlükəsiz fayl adı (simvollar təmizlənir)
+        const safeFileName = encodeURIComponent(rawFileName.replace(/[/\\?%*:|"<>]/g, '-'));
 
-        // --- DEYİşİKLİK BURADA: Content-Type application/octet-stream OLDU ---
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Type', 'application/octet-stream'); // video/mp4 yerinə daha ümumi tip
-                                                                  // Brauzeri faylı oynatmaq əvəzinə yükləməyə məcbur edir
+        // Başlıqlar: Brauzerə bunun bir MP4 faylı olduğunu bildiririk
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
+        res.setHeader('Content-Type', 'video/mp4');
 
-        const ytDlp = spawn('yt-dlp', [
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 
-            '--merge-output-format', 'mp4', 
-            '--no-check-certificates', 
+        /* 
+           ƏSAS HİSSƏ: 
+           -f "best[ext=mp4]/best" -> Bu əmr daxilində həm səs, həm görüntü olan 
+           hazır MP4 faylını seçir. "bestvideo+bestaudio" istifadə etmirik, 
+           çünki o zaman serverdə birləşdirmə (merge) prosesi axını (pipe) pozur.
+        */
+        const download = spawn('yt-dlp', [
+            '-f', 'best[ext=mp4]/best', 
+            '--no-check-certificates',
             '-o', '-', 
             videoUrl
         ]);
 
-        ytDlp.stdout.pipe(res); 
+        download.stdout.pipe(res);
 
-        ytDlp.stderr.on('data', (data) => {
-            console.error(`yt-dlp stderr: ${data}`);
+        download.stderr.on('data', (data) => {
+            console.error(`Download Stderr: ${data}`);
         });
 
-        ytDlp.on('close', (code) => {
+        download.on('close', (code) => {
             if (code !== 0) {
-                console.error(`yt-dlp prosesi ${code} kodu ilə sona çatdı.`);
-                if (!res.headersSent) {
-                    res.status(500).json({ error: "Video yüklənərkən xəta baş verdi." });
-                }
-            } else {
-                console.log('Video uğurla stream edildi.');
+                console.error(`Yükləmə xətası, kod: ${code}`);
+                if (!res.headersSent) res.status(500).send("Yükləmə zamanı xəta.");
             }
         });
 
-        ytDlp.on('error', (err) => {
-            console.error('Failed to start yt-dlp process.', err);
-            if (!res.headersSent) {
-                res.status(500).json({ error: "Serverdə daxili xəta baş verdi." });
-            }
+        // İstifadəçi yükləməni ləğv edərsə prosesi dayandır
+        req.on('close', () => {
+            download.kill();
         });
     });
 });
 
-
-app.use((req, res) => {
-    res.status(404).sendFile(path.join(__dirname, '404.html'));
-});
-
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT}-da işləyir`));
-
+app.listen(PORT, () => console.log(`Server ${PORT} portunda işləyir...`));
