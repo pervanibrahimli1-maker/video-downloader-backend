@@ -14,8 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m pip install --no-cache-dir --break-system-packages -U yt-dlp
 
 WORKDIR /app
+
+# package.json və package-lock.json fayllarını kopyalayın
+# və sonra npm paketlərini quraşdırın.
 COPY package*.json ./
 RUN npm install
+
+# Qalan bütün faylları kopyalayın (o cümlədən server.js)
 COPY . .
 
 # Portu 8000-də sabitləyirik
