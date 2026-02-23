@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMessage = document.getElementById('statusMessage');
     const downloadResult = document.getElementById('downloadResult');
 
-    const BASE_URL = 'https://video-downloader-backend-4.onrender.com';
+    const BASE_URL = window.location.origin + '/api';
 
     downloadButton.addEventListener('click', async () => {
         const url = videoUrlInput.value.trim();
