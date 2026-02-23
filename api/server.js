@@ -78,18 +78,33 @@ app.get('/api/download-video', async (req, res) => {
     if (!videoUrl) return res.status(400).send("URL yoxdur");
 
     try {
-        // TikTok üçün yenidən məlumatı alıb birbaşa linkə yönləndiririk
+        let directLink = "";
+
+        // TikTok linkini analiz edirik
         if (videoUrl.includes('tiktok.com')) {
             const response = await axios.post('https://www.tikwm.com/api/', { url: videoUrl });
-            const directLink = response.data.data.play;
-            // Vercel-də ən yaxşı yol REDIRECT etməkdir
-            return res.redirect(directLink);
+            directLink = response.data.data.play; // Filiqransız link
+        } else {
+            directLink = videoUrl;
         }
-        
-        // Əgər başqa platformadırsa, birbaşa daxil edilən linkə get
-        res.redirect(videoUrl);
+
+        // Videonu API-dan axın (stream) şəklində alırıq
+        const videoResponse = await axios({
+            method: 'get',
+            url: directLink,
+            responseType: 'stream'
+        });
+
+        // Brauzerə yükləmə əmri verən başlıqlar
+        res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+        res.setHeader('Content-Type', 'video/mp4');
+
+        // Videonu birbaşa istifadəçiyə ötürürük
+        videoResponse.data.pipe(res);
+
     } catch (e) {
-        res.status(500).send("Yükləmə xətası");
+        console.error("Yükləmə xətası:", e.message);
+        res.status(500).send("Video yüklənə bilmədi.");
     }
 });
 
