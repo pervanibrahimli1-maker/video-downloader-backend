@@ -75,37 +75,42 @@ app.get('/api/info', async (req, res) => {
 // 3. VİDEONU YÜKLƏYƏN HİSSƏ (/api/download-video)
 app.get('/api/download-video', async (req, res) => {
     const videoUrl = req.query.url;
+    const rawTitle = req.query.title || "video"; // Frontend-dən gələn başlığı götürürük
+
     if (!videoUrl) return res.status(400).send("URL yoxdur");
 
     try {
         let directLink = "";
 
-        // TikTok linkini analiz edirik
+        // TikTok üçün linki alırıq
         if (videoUrl.includes('tiktok.com')) {
             const response = await axios.post('https://www.tikwm.com/api/', { url: videoUrl });
-            directLink = response.data.data.play; // Filiqransız link
+            directLink = response.data.data.play;
         } else {
             directLink = videoUrl;
         }
 
-        // Videonu API-dan axın (stream) şəklində alırıq
+        // Fayl adını təmizləyirik (Sistem xətası verməməsi üçün)
+        const cleanTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 100);
+
+        // Videonu axın (stream) şəklində alırıq
         const videoResponse = await axios({
             method: 'get',
             url: directLink,
             responseType: 'stream'
         });
 
-        // Brauzerə yükləmə əmri verən başlıqlar
-        res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+        // Brauzerə fayl adını təqdim edirik
+        // 'inline' yerinə 'attachment' yazırıq ki, birbaşa yüklənsin
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(cleanTitle)}.mp4"`);
         res.setHeader('Content-Type', 'video/mp4');
 
-        // Videonu birbaşa istifadəçiyə ötürürük
+        // Videonu istifadəçiyə göndəririk
         videoResponse.data.pipe(res);
 
     } catch (e) {
         console.error("Yükləmə xətası:", e.message);
-        res.status(500).send("Video yüklənə bilmədi.");
+        res.status(500).send("Video yüklənərkən xəta baş verdi.");
     }
 });
-
 module.exports = app;
