@@ -1,122 +1,96 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { spawn } = require('child_process');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios'); // 1. BURANI ƏLAVƏ ETDİK
-
+const axios = require('axios');
 const app = express();
 
-// 1. Təhlükəsizlik və Limitlər
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { error: "Çox sayda sorğu göndərilib, bir az gözləyin." }
-});
-app.use(limiter);
-
-const allowedOrigins = [
-    process.env.FRONTEND_ORIGIN || 'https://tt-instadownload.vercel.app',
-    'http://localhost:5500',
-    'http://127.0.0.1:5500'
-];
-
-
-// Bu kod Vercel-dən gələn sorğulara Render-in qapısını açır
-app.use(cors({
-    origin: '*', // Test üçün hamıya icazə ver
-    methods: ['GET', 'POST']
-}));
-
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// 2. Şəkil Proxy Endpointi (Şəkillərin bloklanmaması üçün) - YENİ ƏLAVƏ
-app.get('/proxy-image', async (req, res) => {
+// 1. Şəkil Proxy (Şəkillərin bloklanmaması üçün)
+app.get('/api/proxy-image', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send("URL yoxdur");
-
     try {
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-            }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
         });
         res.set('Content-Type', response.headers['content-type']);
         res.send(response.data);
     } catch (e) {
-        console.error("Proxy xətası:", e.message);
-        res.status(500).send("Şəkil yüklənə bilmədi");
+        res.status(500).send("Proxy xətası");
     }
 });
 
-// 3. Video Məlumatlarını gətirən Endpoint (/info)
-app.get('/info', async (req, res) => {
+// 2. VİDEO MƏLUMATLARINI GƏTİRƏN HİSSƏ (/api/info)
+app.get('/api/info', async (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).json({ error: "URL daxil edilməyib." });
 
-    const ytDlp = spawn('yt-dlp', [
-        '--dump-json',
-        '--no-check-certificates',
-        videoUrl
-    ]);
-
-    let stdoutData = '';
-    let stderrData = '';
-
-    ytDlp.stdout.on('data', (data) => { stdoutData += data; });
-    ytDlp.stderr.on('data', (data) => { stderrData += data; });
-
-    ytDlp.on('close', (code) => {
-        if (code !== 0) {
-            return res.status(400).json({ error: "Video məlumatları alınmadı." });
-        }
-
-        try {
-            const info = JSON.parse(stdoutData);
-            res.json({
-                title: info.title || "Başlıq yoxdur",
-                thumbnail: info.thumbnail || "",
-                uploader: info.uploader || info.channel || info.uploader_id || "Naməlum",
-                duration: info.duration_string || "0:00",
-                views: info.view_count ? info.view_count.toLocaleString() : "0",
-                platform: info.extractor_key || "Video",
-                // Açıqlama hissəsi burada (description):
-                description: info.description ? info.description.substring(0, 150) + "..." : "Açıqlama yoxdur."
+    try {
+        // TIKTOK ÜÇÜN (TikWM API istifadə edirik - Sürətli və Pulsuz)
+        if (videoUrl.includes('tiktok.com')) {
+            const response = await axios.post('https://www.tikwm.com/api/', {
+                url: videoUrl,
+                hd: 1
             });
-        } catch (err) {
-            res.status(500).json({ error: "Məlumat emal xətası." });
+
+            const data = response.data.data;
+            if (!data) throw new Error("Video tapılmadı.");
+
+            return res.json({
+                title: data.title || "TikTok Videosu",
+                thumbnail: data.cover,
+                uploader: data.author.unique_id,
+                duration: data.duration + " san",
+                platform: "TikTok",
+                description: data.title || "TikTok-dan yüklənən video.",
+                download_url: data.play // Bu birbaşa mp4 linkidir
+            });
+        } 
+        
+        // INSTAGRAM ÜÇÜN (Ehtiyat plan)
+        else if (videoUrl.includes('instagram.com')) {
+            // Instagram üçün bura öz API-nı yerləşdirə bilərsən. 
+            // Hazırda nümunə məlumat qaytarıram:
+            return res.json({
+                title: "Instagram Videosu",
+                thumbnail: "https://via.placeholder.com/150",
+                uploader: "Instagram User",
+                duration: "N/A",
+                platform: "Instagram",
+                description: "Instagram videoları üçün xüsusi API lazımdır.",
+                download_url: videoUrl
+            });
         }
-    });
+
+        res.status(400).json({ error: "Dəstəklənməyən platforma." });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Video məlumatları alınarkən xəta baş verdi." });
+    }
 });
 
-// 4. Videonu MP4 yükləyən Endpoint (/download-video)
-app.get('/download-video', (req, res) => {
+// 3. VİDEONU YÜKLƏYƏN HİSSƏ (/api/download-video)
+app.get('/api/download-video', async (req, res) => {
     const videoUrl = req.query.url;
-    if (!videoUrl) return res.status(400).json({ error: "URL lazımdır." });
+    if (!videoUrl) return res.status(400).send("URL yoxdur");
 
-    const getFileName = spawn('yt-dlp', ['--get-filename', '-o', '%(title)s.%(ext)s', videoUrl]);
-    
-    let rawFileName = 'video.mp4';
-    getFileName.stdout.on('data', (data) => { rawFileName = data.toString().trim(); });
-
-    getFileName.on('close', () => {
-        const safeFileName = encodeURIComponent(rawFileName.replace(/[/\\?%*:|"<>]/g, '-'));
-        res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
-        res.setHeader('Content-Type', 'video/mp4');
-
-        const download = spawn('yt-dlp', [
-            '-f', 'best[ext=mp4]/best', 
-            '--no-check-certificates',
-            '-o', '-', 
-            videoUrl
-        ]);
-
-        download.stdout.pipe(res);
-
-        req.on('close', () => { download.kill(); });
-    });
+    try {
+        // TikTok üçün yenidən məlumatı alıb birbaşa linkə yönləndiririk
+        if (videoUrl.includes('tiktok.com')) {
+            const response = await axios.post('https://www.tikwm.com/api/', { url: videoUrl });
+            const directLink = response.data.data.play;
+            // Vercel-də ən yaxşı yol REDIRECT etməkdir
+            return res.redirect(directLink);
+        }
+        
+        // Əgər başqa platformadırsa, birbaşa daxil edilən linkə get
+        res.redirect(videoUrl);
+    } catch (e) {
+        res.status(500).send("Yükləmə xətası");
+    }
 });
 
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server ${PORT} portunda aktivdir.`));
+module.exports = app;
