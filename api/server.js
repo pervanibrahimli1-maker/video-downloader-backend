@@ -16,19 +16,16 @@ const limiter = rateLimit({
 app.use(limiter);
 
 const allowedOrigins = [
-    process.env.FRONTEND_ORIGIN || 'https://tt-instavideoindirme.free.nf',
+    process.env.FRONTEND_ORIGIN || 'https://tt-instadownload.vercel.app',
     'http://localhost:5500',
     'http://127.0.0.1:5500'
 ];
 
+
+// Bu kod Vercel-dən gələn sorğulara Render-in qapısını açır
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('CORS icazə vermir.'));
-        }
-    }
+    origin: '*', // Test üçün hamıya icazə ver
+    methods: ['GET', 'POST']
 }));
 
 app.use(express.json());
