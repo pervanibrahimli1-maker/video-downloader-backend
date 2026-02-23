@@ -113,4 +113,6 @@ app.get('/api/download-video', async (req, res) => {
         res.status(500).send("Video yüklənərkən xəta baş verdi.");
     }
 });
+
+
 module.exports = app;
