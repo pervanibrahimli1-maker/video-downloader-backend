@@ -10,25 +10,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = videoUrlInput.value.trim();
         if (!url) return alert("Linki daxil edin!");
 
-        statusMessage.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-spin"></i> Gözləyin...</span>';
+        statusMessage.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-spin"></i> Axtarılır...</span>';
         downloadResult.innerHTML = '';
         downloadButton.disabled = true;
 
         try {
             const response = await fetch(`${BASE_URL}/info?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error("Video tapılmadı.");
-
             const data = await response.json();
+
+            if (!response.ok || !data.download_url) {
+                throw new Error("Video linki tapılmadı. Hesab gizli ola bilər.");
+            }
             
-            // Thumbnail üçün proxy istifadə edirik ki, görünsün
-            const proxiedThumb = data.thumbnail ? `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}` : "https://via.placeholder.com/400x250?text=Video";
+            const proxiedThumb = data.thumbnail ? `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}` : "";
             
-            statusMessage.innerHTML = '<span style="color: #00f2fe;">Tapıldı!</span>';
+            statusMessage.innerHTML = '<span style="color: #00f2fe;">Uğurlu!</span>';
 
             downloadResult.innerHTML = `
                 <div class="result-card">
                     <div class="card-preview">
-                        <img src="${proxiedThumb}" alt="Thumbnail">
+                        <img src="${proxiedThumb}" alt="Thumbnail" onerror="this.src='https://via.placeholder.com/400x250?text=Hazirdir'">
                         <span class="badge">${data.duration}</span>
                     </div>
                     <div class="card-info">
