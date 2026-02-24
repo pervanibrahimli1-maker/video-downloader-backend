@@ -7,7 +7,8 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-const RAPID_KEY = process.env.RAPID_API_KEY;
+// API Key məlumatları
+const RAPID_KEY = process.env.RAPID_API_KEY || '6240a92415msha1d36872e3dd6d9p16a136jsn393bf73d3be1';
 const IG_HOST = 'instagram-downloader-download-instagram-videos-stories1.p.rapidapi.com';
 const TT_HOST = 'tiktok-max-quality.p.rapidapi.com';
 
@@ -34,94 +35,106 @@ app.get('/api/info', async (req, res) => {
 
     // --- TIKTOK MƏNTİQİ ---
     if (videoUrl.includes('tiktok.com')) {
-        // 1-ci Cəhd: RapidAPI
+        // Cəhd 1: RapidAPI
         try {
             const resTT = await axios.get(`https://${TT_HOST}/download/`, {
                 params: { url: videoUrl },
                 headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': TT_HOST },
                 timeout: 5000
             });
-            if (resTT.data) return res.json({
-                title: resTT.data.title || "TikTok Video",
-                thumbnail: resTT.data.cover || "",
-                uploader: resTT.data.author?.nickname || "User",
-                duration: resTT.data.duration || "HD",
-                platform: "TikTok",
-                description: "Premium Quality",
-                download_url: resTT.data.video?.url || resTT.data.play
-            });
-        } catch (e) { console.log("TikTok RapidAPI limit/xəta."); }
+            if (resTT.data && (resTT.data.url || resTT.data.play)) {
+                return res.json({
+                    title: resTT.data.title || "TikTok Video",
+                    thumbnail: resTT.data.cover || "",
+                    uploader: resTT.data.author?.nickname || "User",
+                    duration: resTT.data.duration || "HD",
+                    platform: "TikTok",
+                    description: "Premium Quality (RapidAPI)",
+                    download_url: resTT.data.video?.url || resTT.data.play
+                });
+            }
+        } catch (e) { console.log("TikTok RapidAPI xətası (403/429/Timeout), Fallback-ə keçilir."); }
 
-        // 2-ci Cəhd: TikWM (Çox stabildir)
+        // Cəhd 2: TikWM (Pulsuz ehtiyat)
         try {
             const ft = await axios.post('https://www.tikwm.com/api/', { url: videoUrl, hd: 1 }, { timeout: 5000 });
-            const fd = ft.data.data;
-            if (fd) return res.json({
-                title: fd.title,
-                thumbnail: fd.cover,
-                uploader: fd.author.unique_id,
-                duration: fd.duration + "s",
-                platform: "TikTok",
-                description: "Standard Quality",
-                download_url: fd.hdplay || fd.play
-            });
-        } catch (e) { console.log("TikWM xətası."); }
+            if (ft.data && ft.data.data) {
+                const fd = ft.data.data;
+                return res.json({
+                    title: fd.title,
+                    thumbnail: fd.cover,
+                    uploader: fd.author.unique_id,
+                    duration: fd.duration + "s",
+                    platform: "TikTok",
+                    description: "Standard Quality (TikWM)",
+                    download_url: fd.hdplay || fd.play
+                });
+            }
+        } catch (e) { console.log("TikWM ehtiyatı da işləmədi."); }
     }
 
     // --- INSTAGRAM MƏNTİQİ ---
     if (videoUrl.includes('instagram.com')) {
-        // 1-ci Cəhd: RapidAPI
+        // Cəhd 1: RapidAPI
         try {
             const resIG = await axios.get(`https://${IG_HOST}/`, {
                 params: { url: videoUrl },
                 headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': IG_HOST },
                 timeout: 5000
             });
-            if (resIG.data) return res.json({
-                title: "Instagram Video",
-                thumbnail: resIG.data.thumbnail || "",
-                uploader: "Instagram User",
-                duration: "HD",
-                platform: "Instagram",
-                description: "Premium Quality",
-                download_url: resIG.data.url || resIG.data.download_url
-            });
-        } catch (e) { console.log("Instagram RapidAPI limit/xəta."); }
+            if (resIG.data && (resIG.data.url || resIG.data.download_url)) {
+                return res.json({
+                    title: "Instagram Video",
+                    thumbnail: resIG.data.thumbnail || "",
+                    uploader: "Instagram User",
+                    duration: "HD",
+                    platform: "Instagram",
+                    description: "Premium Quality (RapidAPI)",
+                    download_url: resIG.data.url || resIG.data.download_url
+                });
+            }
+        } catch (e) { console.log("Instagram RapidAPI xətası (403/429/Timeout), Fallback-ə keçilir."); }
 
-        // 2-ci Cəhd: Diego API (Hal-hazırda aktivdir)
+        // Cəhd 2: Diego-OFC (Ehtiyat)
         try {
-            const fi = await axios.get(`https://api.diego-ofc.xyz/api/v1/igdl?url=${encodeURIComponent(videoUrl)}`, { timeout: 5000 });
-            if (fi.data && fi.data.data[0]) return res.json({
-                title: "Instagram Video",
-                thumbnail: fi.data.data[0].thumbnail,
-                uploader: "User",
-                duration: "HD",
-                platform: "Instagram",
-                description: "Standard Quality",
-                download_url: fi.data.data[0].url
-            });
-        } catch (e) { console.log("Diego API xətası."); }
+            const fi = await axios.get(`https://api.diego-ofc.xyz/api/v1/igdl?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
+            if (fi.data && fi.data.data && fi.data.data[0]) {
+                return res.json({
+                    title: "Instagram Video",
+                    thumbnail: fi.data.data[0].thumbnail,
+                    uploader: "User",
+                    duration: "HD",
+                    platform: "Instagram",
+                    description: "Standard Quality (Diego)",
+                    download_url: fi.data.data[0].url
+                });
+            }
+        } catch (e) { console.log("Diego ehtiyatı işləmədi."); }
 
-        // 3-cü Cəhd: Ametrins (Ehtiyat)
+        // Cəhd 3: Ametrins (Son ehtiyat)
         try {
-            const fa = await axios.get(`https://api.ametrins.my.id/api/dowloader/instagram?url=${encodeURIComponent(videoUrl)}`, { timeout: 5000 });
-            if (fa.data && fa.data.data[0]) return res.json({
-                title: "Instagram Video",
-                thumbnail: fa.data.data[0].thumbnail,
-                uploader: "User",
-                duration: "HD",
-                platform: "Instagram",
-                description: "Backup Quality",
-                download_url: fa.data.data[0].url
-            });
-        } catch (e) { console.log("Ametrins API xətası."); }
+            const fa = await axios.get(`https://api.ametrins.my.id/api/dowloader/instagram?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
+            if (fa.data && fa.data.data && fa.data.data[0]) {
+                return res.json({
+                    title: "Instagram Video",
+                    thumbnail: fa.data.data[0].thumbnail,
+                    uploader: "User",
+                    duration: "HD",
+                    platform: "Instagram",
+                    description: "Standard Quality (Ametrins)",
+                    download_url: fa.data.data[0].url
+                });
+            }
+        } catch (e) { console.log("Ametrins ehtiyatı işləmədi."); }
     }
 
-    // Əgər bura gəlibsə, deməli heç biri işləməyib
-    res.status(404).json({ error: "Video tapılmadı. Zəhmət olmasa bir az sonra yenidən yoxlayın." });
+    // Heç biri işləməsə 404 qaytarırıq (500 yox!)
+    res.status(404).json({ error: "Video tapılmadı və ya bütün API-lər məşğuldur." });
 });
 
+// Yükləmə endpointi
 app.get('/api/download-video', (req, res) => {
+    if (!req.query.url) return res.status(400).send("URL yoxdur");
     res.redirect(req.query.url);
 });
 
