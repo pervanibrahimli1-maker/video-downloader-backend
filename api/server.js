@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(); // .env faylını oxumaq üçün
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -27,61 +27,58 @@ app.get('/api/proxy-image', async (req, res) => {
     } catch (e) { res.status(500).send("Proxy xətası"); }
 });
 
-// 2. VİDEO MƏLUMATLARINI GƏTİRƏN HİSSƏ (/api/info)
+// 2. VİDEO MƏLUMATLARINI GƏTİRƏN HİSSƏ
 app.get('/api/info', async (req, res) => {
     let videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).json({ error: "URL daxil edilməyib." });
-    
     videoUrl = videoUrl.trim().split('?')[0];
 
-    // --- TIKTOK MƏNTİQİ ---
+    // --- TIKTOK (Sənin RapidAPI-n - TikTok Max Quality) ---
     if (videoUrl.includes('tiktok.com')) {
         try {
-            // RapidAPI cəhdi
-            const resTT = await axios.get(`https://${TT_HOST}/download/`, {
+            const options = {
+                method: 'GET',
+                url: `https://${TT_HOST}/download/`,
                 params: { url: videoUrl },
-                headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': TT_HOST },
+                headers: {
+                    'x-rapidapi-key': RAPID_KEY,
+                    'x-rapidapi-host': TT_HOST
+                },
                 timeout: 7000
-            });
-            if (resTT.data) {
+            };
+            const response = await axios.request(options);
+            const data = response.data;
+
+            if (data && !data.error) {
                 return res.json({
-                    title: resTT.data.title || "TikTok Video",
-                    thumbnail: resTT.data.cover || "",
-                    uploader: resTT.data.author?.nickname || "User",
-                    duration: resTT.data.duration || "HD",
+                    title: data.title || "TikTok Video",
+                    thumbnail: data.cover || data.thumbnail || "",
+                    uploader: data.author?.nickname || "User",
+                    duration: data.duration || "HD",
                     platform: "TikTok",
                     description: "Premium Quality (RapidAPI)",
-                    download_url: resTT.data.video?.url || resTT.data.play || resTT.data.url
+                    download_url: data.video?.url || data.play || data.url
                 });
             }
-        } catch (e) { console.log("TikTok RapidAPI xətası, Fallback-ə keçilir."); }
-
-        // TikWM Fallback
-        try {
-            const ft = await axios.post('https://www.tikwm.com/api/', { url: videoUrl, hd: 1 });
-            const fd = ft.data.data;
-            return res.json({
-                title: fd.title,
-                thumbnail: fd.cover,
-                uploader: fd.author.unique_id,
-                duration: fd.duration + "s",
-                platform: "TikTok",
-                description: "Standard Quality (TikWM)",
-                download_url: fd.hdplay || fd.play
-            });
-        } catch (e) { console.log("TikTok tamamilə uğursuz."); }
+        } catch (e) { console.log("TikTok API xətası. Limit dolmuş ola bilər."); }
     }
 
-    // --- İNSTAGRAM MƏNTİQİ (YENİ APİ - 7scorp) ---
+    // --- İNSTAGRAM (Sənin RapidAPI-n - 7scorp API) ---
     if (videoUrl.includes('instagram.com')) {
         try {
-            const resIG = await axios.get(`https://${IG_HOST}/unified/url`, {
+            const options = {
+                method: 'GET',
+                url: `https://${IG_HOST}/unified/url`,
                 params: { url: videoUrl },
-                headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': IG_HOST },
+                headers: {
+                    'x-rapidapi-key': RAPID_KEY,
+                    'x-rapidapi-host': IG_HOST
+                },
                 timeout: 8000
-            });
-            
-            const data = resIG.data;
+            };
+            const response = await axios.request(options);
+            const data = response.data;
+
             if (data && !data.error) {
                 return res.json({
                     title: "Instagram Videosu",
@@ -89,30 +86,14 @@ app.get('/api/info', async (req, res) => {
                     uploader: "Instagram User",
                     duration: "HD",
                     platform: "Instagram",
-                    description: "Premium Quality (7scorp API)",
-                    download_url: data.media || data.url || data.download_url
+                    description: "Premium Quality (RapidAPI)",
+                    download_url: data.media || data.url || data.downloadUrl
                 });
             }
-        } catch (e) { console.log("Instagram RapidAPI xətası, Fallback-ə keçilir."); }
-
-        // Diego Fallback
-        try {
-            const fi = await axios.get(`https://api.diego-ofc.xyz/api/v1/igdl?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
-            if (fi.data && fi.data.data[0]) {
-                return res.json({
-                    title: "Instagram Video",
-                    thumbnail: fi.data.data[0].thumbnail,
-                    uploader: "User",
-                    duration: "HD",
-                    platform: "Instagram",
-                    description: "Standard Quality (Diego)",
-                    download_url: fi.data.data[0].url
-                });
-            }
-        } catch (err) { console.log("Instagram tamamilə uğursuz."); }
+        } catch (e) { console.log("Instagram API xətası. Limit dolmuş ola bilər."); }
     }
 
-    res.status(404).json({ error: "Video tapılmadı və ya bütün API-lər məşğuldur." });
+    res.status(404).json({ error: "Video tapılmadı. Hesab gizli ola bilər və ya API limiti bitib." });
 });
 
 // 3. YÜKLƏMƏ
