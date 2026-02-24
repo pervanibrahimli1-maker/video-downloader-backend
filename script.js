@@ -41,7 +41,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div style="font-size: 0.7rem; color: #888;">${data.platform}</div>
                             </div>
                         </div>
-                        // script.js içindəki düymə hissəsi
 <a href="${BASE_URL}/download-video?url=${encodeURIComponent(data.download_url)}&title=${encodeURIComponent(data.title)}" class="final-dl-btn">
     <i class="fas fa-cloud-download-alt"></i> VİDEONU YÜKLƏ (.MP4)
 </a>
