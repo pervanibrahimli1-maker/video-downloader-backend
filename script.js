@@ -10,31 +10,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = videoUrlInput.value.trim();
         if (!url) return alert("Linki daxil edin!");
 
-        statusMessage.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-spin"></i> Məlumatlar alınır...</span>';
+        statusMessage.innerHTML = '<span class="loading"><i class="fas fa-spinner fa-spin"></i> Gözləyin...</span>';
         downloadResult.innerHTML = '';
         downloadButton.disabled = true;
 
         try {
             const response = await fetch(`${BASE_URL}/info?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error("Video məlumatları alınmadı.");
+            if (!response.ok) throw new Error("Video tapılmadı.");
 
             const data = await response.json();
             
-            // Şəkli proxy vasitəsilə göstəririk
-            const proxiedThumb = data.thumbnail ? `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}` : "";
+            // Thumbnail üçün proxy istifadə edirik ki, görünsün
+            const proxiedThumb = data.thumbnail ? `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}` : "https://via.placeholder.com/400x250?text=Video";
             
-            statusMessage.innerHTML = '<span style="color: #00f2fe;">Uğurlu!</span>';
+            statusMessage.innerHTML = '<span style="color: #00f2fe;">Tapıldı!</span>';
 
             downloadResult.innerHTML = `
                 <div class="result-card">
                     <div class="card-preview">
-                        <img src="${proxiedThumb}" alt="Video Thumbnail" onerror="this.src='https://via.placeholder.com/400x250?text=Video+Hazirdir'">
+                        <img src="${proxiedThumb}" alt="Thumbnail">
                         <span class="badge">${data.duration}</span>
                     </div>
                     <div class="card-info">
                         <h3>${data.title}</h3>
-                        <p class="card-desc">${data.description}</p>
-
                         <div class="user-tag">
                             <div class="avatar">${data.uploader.charAt(0).toUpperCase()}</div>
                             <div class="username">
@@ -42,12 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div style="font-size: 0.7rem; color: #888;">${data.platform}</div>
                             </div>
                         </div>
-                        <a href="${data.download_url}" target="_blank" download="video.mp4" class="final-dl-btn">
+                        <a href="${BASE_URL}/download-video?url=${encodeURIComponent(data.download_url)}" target="_blank" class="final-dl-btn">
                             <i class="fas fa-cloud-download-alt"></i> VİDEONU YÜKLƏ (.MP4)
                         </a>
-                        <p style="font-size: 0.7rem; color: #888; margin-top: 10px; text-align: center;">
-                            *Əgər yükləmə başlamasa, videonun üzərində sağ klik edib "Save As" seçin.
-                        </p>
                     </div>
                 </div>
             `;
