@@ -11,7 +11,6 @@ const RAPID_KEY = process.env.RAPID_API_KEY;
 const IG_HOST = process.env.IG_HOST;
 const TT_HOST = process.env.TT_HOST;
 
-// 1. Şəkil Proxy (Şəkillərin görünməsi üçün)
 app.get('/api/proxy-image', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send("URL yoxdur");
@@ -22,10 +21,9 @@ app.get('/api/proxy-image', async (req, res) => {
         });
         res.set('Content-Type', response.headers['content-type'] || 'image/jpeg');
         res.send(response.data);
-    } catch (e) { res.status(500).send("Proxy error"); }
+    } catch (e) { res.status(500).send("error"); }
 });
 
-// 2. Video Məlumatları (info)
 app.get('/api/info', async (req, res) => {
     let videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).json({ error: "URL yoxdur" });
@@ -38,13 +36,15 @@ app.get('/api/info', async (req, res) => {
                 headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': TT_HOST }
             });
             const d = resTT.data;
+            // TikTok linkini dəqiqləşdiririk
+            const tiktokDl = d.video?.url || d.play || d.url || "";
             return res.json({
                 title: d.title || "TikTok Video",
                 thumbnail: d.cover || d.thumbnail || "",
-                uploader: d.author?.nickname || "TikTok User",
+                uploader: d.author?.nickname || "User",
                 duration: d.duration || "HD",
                 platform: "TikTok",
-                download_url: d.video?.url || d.play || d.url
+                download_url: tiktokDl // Bura mütləq dolmalıdır
             });
         } 
 
@@ -54,14 +54,17 @@ app.get('/api/info', async (req, res) => {
                 headers: { 'x-rapidapi-key': RAPID_KEY, 'x-rapidapi-host': IG_HOST }
             });
             const d = resIG.data;
-            // API-dan gələn müxtəlif açar sözləri yoxlayırıq
+            // Instagram üçün bütün mümkün link sahələrini yoxlayırıq:
+            const instaDl = d.media || d.url || d.downloadUrl || (d.result && d.result.url) || "";
+            const instaThumb = d.thumbnail || d.cover || (d.result && d.result.thumbnail) || "";
+
             return res.json({
-                title: d.title || d.caption || "Instagram Videosu",
-                thumbnail: d.thumbnail || d.cover || (d.result && d.result.thumbnail) || "",
+                title: d.title || d.caption || "Instagram Video",
+                thumbnail: instaThumb,
                 uploader: "Instagram User",
                 duration: "HD",
                 platform: "Instagram",
-                download_url: d.media || d.url || d.downloadUrl
+                download_url: instaDl // Bura mütləq dolmalıdır
             });
         }
     } catch (err) {
@@ -69,11 +72,9 @@ app.get('/api/info', async (req, res) => {
     }
 });
 
-// 3. Yükləmə (Download)
 app.get('/api/download-video', (req, res) => {
     const url = req.query.url;
-    if (!url) return res.status(400).send("URL yoxdur");
-    // Birbaşa yönləndirmə (Vercel-də ən təhlükəsiz yol)
+    if (!url || url === 'undefined') return res.status(400).send("Xəta: Link tapılmadı");
     res.redirect(url);
 });
 
