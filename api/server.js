@@ -3,25 +3,23 @@ const cors = require('cors');
 const axios = require('axios');
 const app = express();
 
-// 1. CORS VƏ TƏHLÜKƏSİZLİK DÜZƏLİŞİ
+// 1. CORS TƏNZİMLƏMƏSİ (Bütün xətalar üçün)
 app.use(cors({
-    origin: '*', // Bütün saytlardan gələn sorğulara icazə verilir
+    origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// 2. ŞƏKİL PROXY (Thumbnaillərin bloklanmaması üçün)
+// 2. ŞƏKİL PROXY
 app.get('/api/proxy-image', async (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send("URL yoxdur");
     try {
         const response = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
-            }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
         });
         res.set('Content-Type', response.headers['content-type']);
         res.send(response.data);
@@ -30,10 +28,13 @@ app.get('/api/proxy-image', async (req, res) => {
     }
 });
 
-// 3. VİDEO MƏLUMATLARINI GƏTİRƏN ENDPOİNT (/api/info)
+// 3. VİDEO MƏLUMATLARINI GƏTİRƏN HİSSƏ (/api/info)
 app.get('/api/info', async (req, res) => {
-    const videoUrl = req.query.url;
+    let videoUrl = req.query.url;
     if (!videoUrl) return res.status(400).json({ error: "URL daxil edilməyib." });
+
+    // Linki təmizləyirik (lazımsız parametrləri silirik)
+    videoUrl = videoUrl.split('?')[0];
 
     try {
         // --- TIKTOK ÜÇÜN ---
@@ -48,38 +49,59 @@ app.get('/api/info', async (req, res) => {
                 uploader: data.author.unique_id,
                 duration: data.duration + " san",
                 platform: "TikTok",
-                description: data.title || "Yüksək keyfiyyətli TikTok videosu.",
-                download_url: data.hdplay || data.play // HD linki üstünlükdür
+                description: data.title || "TikTok HD Video",
+                download_url: data.hdplay || data.play
             });
         } 
         
-        // --- İNSTAGRAM ÜÇÜN ---
+        // --- İNSTAGRAM ÜÇÜN (Yenilənmiş və daha stabil API) ---
         else if (videoUrl.includes('instagram.com')) {
-            const response = await axios.get(`https://api.vreden.my.id/api/igdownload?url=${encodeURIComponent(videoUrl)}`);
-            // API massiv qaytardığı üçün ilk elementi götürürük
-            const data = response.data.result[0]; 
-            if (!data) throw new Error("İnstagram videosu tapılmadı.");
-
-            return res.json({
-                title: "İnstagram Videosu",
-                thumbnail: data.thumbnail || "",
-                uploader: "Instagram User",
-                duration: "HD",
-                platform: "Instagram",
-                description: "Yüksək keyfiyyətli İnstagram videosu.",
-                download_url: data.url // Orijinal mp4 linki
-            });
+            try {
+                // Birinci Mənbə (Agatz API)
+                const response = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(videoUrl)}`);
+                const data = response.data.data[0]; 
+                
+                if (data && data.url) {
+                    return res.json({
+                        title: "Instagram Videosu",
+                        thumbnail: data.thumbnail || "",
+                        uploader: "Instagram User",
+                        duration: "HD",
+                        platform: "Instagram",
+                        description: "Yüksək keyfiyyətli Instagram videosu.",
+                        download_url: data.url
+                    });
+                }
+                throw new Error("Birinci API uğursuz oldu.");
+            } catch (err) {
+                // İkinci Mənbə (Fallback - Botcahx API)
+                const fallbackRes = await axios.get(`https://api.botcahx.live/api/dowloader/igdl?url=${encodeURIComponent(videoUrl)}&apikey=neyo-key`);
+                const fbData = fallbackRes.data.result[0];
+                
+                if (fbData && fbData.url) {
+                    return res.json({
+                        title: "Instagram Videosu",
+                        thumbnail: fbData.thumbnail || "",
+                        uploader: "Instagram User",
+                        duration: "HD",
+                        platform: "Instagram",
+                        description: "Instagram videosu (Ehtiyat mənbə).",
+                        download_url: fbData.url
+                    });
+                }
+                throw new Error("Instagram videosu tapılmadı.");
+            }
         }
 
         res.status(400).json({ error: "Bu platforma hələ dəstəklənmir." });
 
     } catch (err) {
-        console.error("Info Xətası:", err.message);
-        res.status(500).json({ error: "Məlumatları alarkən xəta baş verdi. Linkin düzgünlüyünü yoxlayın." });
+        console.error("Xəta:", err.message);
+        res.status(500).json({ error: "Məlumatları alarkən xəta baş verdi. Linki yoxlayın." });
     }
 });
 
-// 4. VİDEONU MP4 KİMİ YÜKLƏYƏN ENDPOİNT (/api/download-video)
+// 4. VİDEONU YÜKLƏYƏN HİSSƏ (/api/download-video)
 app.get('/api/download-video', async (req, res) => {
     const videoUrl = req.query.url;
     const rawTitle = req.query.title || "video";
@@ -87,47 +109,15 @@ app.get('/api/download-video', async (req, res) => {
     if (!videoUrl) return res.status(400).send("URL yoxdur");
 
     try {
-        let directMp4Link = "";
-
-        // TikTok HD linkini alırıq
-        if (videoUrl.includes('tiktok.com')) {
-            const response = await axios.post('https://www.tikwm.com/api/', { url: videoUrl, hd: 1 });
-            directMp4Link = response.data.data.hdplay || response.data.data.play;
-        } 
-        // İnstagram HD linkini alırıq
-        else if (videoUrl.includes('instagram.com')) {
-            const response = await axios.get(`https://api.vreden.my.id/api/igdownload?url=${encodeURIComponent(videoUrl)}`);
-            directMp4Link = response.data.result[0].url;
-        } else {
-            directMp4Link = videoUrl;
-        }
-
-        // Fayl adını təmizləyirik (Simvollar və uzunluq)
         const cleanTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 80);
 
-        // Videonu uzaq serverdən axın (stream) kimi çəkirik
-        const videoResponse = await axios({
-            method: 'get',
-            url: directMp4Link,
-            responseType: 'stream',
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' 
-            }
-        });
-
-        // BRAUZERƏ YÜKLƏMƏ ƏMRİ VERİRİK (Fayl adı burada təyin olunur)
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(cleanTitle)}.mp4"`);
-        res.setHeader('Content-Type', 'video/mp4');
-
-        // Videonu istifadəçiyə ötürürük
-        videoResponse.data.pipe(res);
+        // İstifadəçini birbaşa videonun orijinal linkinə yönləndiririk (Redirect)
+        // Bu, Vercel-də 10 saniyəlik Timeout xətasının qarşısını alır (ƏN ETİBARLI YOL)
+        res.redirect(videoUrl);
 
     } catch (e) {
-        console.error("Yükləmə Xətası:", e.message);
-        // Xəta olarsa (məsələn Vercel 10s timeout), birbaşa linkə yönləndiririk (fallback)
-        res.redirect(videoUrl);
+        res.status(500).send("Yükləmə xətası.");
     }
 });
 
-// VERCEL ÜÇÜN EKSPORT
 module.exports = app;
