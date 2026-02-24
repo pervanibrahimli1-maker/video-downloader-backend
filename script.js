@@ -16,25 +16,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const response = await fetch(`${BASE_URL}/info?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error("Video tapılmadı.");
+            if (!response.ok) throw new Error("Video məlumatları alınmadı.");
 
             const data = await response.json();
             
-            // Şəkli proxy vasitəsilə çağırırıq ki, bloklanmasın
-            const proxiedThumb = `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}`;
+            // Şəkli proxy vasitəsilə göstəririk
+            const proxiedThumb = data.thumbnail ? `${BASE_URL}/proxy-image?url=${encodeURIComponent(data.thumbnail)}` : "";
             
             statusMessage.innerHTML = '<span style="color: #00f2fe;">Uğurlu!</span>';
 
             downloadResult.innerHTML = `
                 <div class="result-card">
                     <div class="card-preview">
-                        <img src="${proxiedThumb}" alt="Video Thumbnail">
+                        <img src="${proxiedThumb}" alt="Video Thumbnail" onerror="this.src='https://via.placeholder.com/400x250?text=Video+Hazirdir'">
                         <span class="badge">${data.duration}</span>
                     </div>
                     <div class="card-info">
                         <h3>${data.title}</h3>
-                        
-                        <!-- Açıqlama Hissəsi -->
                         <p class="card-desc">${data.description}</p>
 
                         <div class="user-tag">
@@ -44,9 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div style="font-size: 0.7rem; color: #888;">${data.platform}</div>
                             </div>
                         </div>
-                        <a href="${BASE_URL}/download-video?url=${encodeURIComponent(url)}" class="final-dl-btn">
+                        <a href="${data.download_url}" target="_blank" download="video.mp4" class="final-dl-btn">
                             <i class="fas fa-cloud-download-alt"></i> VİDEONU YÜKLƏ (.MP4)
                         </a>
+                        <p style="font-size: 0.7rem; color: #888; margin-top: 10px; text-align: center;">
+                            *Əgər yükləmə başlamasa, videonun üzərində sağ klik edib "Save As" seçin.
+                        </p>
                     </div>
                 </div>
             `;
