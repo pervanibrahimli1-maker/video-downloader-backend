@@ -31,7 +31,7 @@ app.get('/api/info', async (req, res) => {
     videoUrl = videoUrl.trim().split('?')[0];
 
     try {
-        // --- TIKTOK ÜÇÜN (TikWM - Stabil) ---
+        // --- TIKTOK ÜÇÜN (Stabil) ---
         if (videoUrl.includes('tiktok.com')) {
             const response = await axios.post('https://www.tikwm.com/api/', { url: videoUrl, hd: 1 }, { timeout: 8000 });
             const data = response.data.data;
@@ -43,37 +43,50 @@ app.get('/api/info', async (req, res) => {
                 uploader: data.author.unique_id,
                 duration: data.duration + " san",
                 platform: "TikTok",
-                description: data.title || "Yüksək keyfiyyətli TikTok videosu.",
+                description: data.title || "TikTok HD Video",
                 download_url: data.hdplay || data.play
             });
         } 
         
-        // --- İNSTAGRAM ÜÇÜN (YENİ AKTİV APİ-LƏR) ---
+        // --- İNSTAGRAM ÜÇÜN (YENİ GÜCLÜ MƏNBƏLƏR) ---
         else if (videoUrl.includes('instagram.com')) {
             let igData = null;
 
-            // Mənbə 1: Diego-OFC API (Hal-hazırda ən sürətli)
+            // Mənbə 1: Abhitools (Çox vaxt ən stabil olanı)
             try {
-                const res1 = await axios.get(`https://api.diego-ofc.xyz/api/v1/igdl?url=${encodeURIComponent(videoUrl)}`, { timeout: 7000 });
+                const res1 = await axios.get(`https://ig.abhitools.in/api/v1/download?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
                 if (res1.data && res1.data.data && res1.data.data[0]) {
                     igData = {
                         url: res1.data.data[0].url,
                         thumb: res1.data.data[0].thumbnail
                     };
                 }
-            } catch (e) { console.log("Mənbə 1 (Diego) işləmədi"); }
+            } catch (e) { console.log("Abhitools uğursuz"); }
 
-            // Mənbə 2: Vreden API (Ehtiyat)
+            // Mənbə 2: Agatz API
             if (!igData) {
                 try {
-                    const res2 = await axios.get(`https://api.vreden.web.id/api/igdownload?url=${encodeURIComponent(videoUrl)}`, { timeout: 7000 });
-                    if (res2.data && res2.data.result && res2.data.result[0]) {
+                    const res2 = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+                    if (res2.data && res2.data.data && res2.data.data[0]) {
                         igData = {
-                            url: res2.data.result[0].url,
-                            thumb: res2.data.result[0].thumbnail
+                            url: res2.data.data[0].url,
+                            thumb: res2.data.data[0].thumbnail || ""
                         };
                     }
-                } catch (e) { console.log("Mənbə 2 (Vreden) işləmədi"); }
+                } catch (e) { console.log("Agatz uğursuz"); }
+            }
+
+            // Mənbə 3: TiklyDown (Bəzən IG dəstəkləyir)
+            if (!igData) {
+                try {
+                    const res3 = await axios.get(`https://api.tiklydown.eu.org/api/download/insta?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+                    if (res3.data && res3.data.result && res3.data.result[0]) {
+                        igData = {
+                            url: res3.data.result[0].url,
+                            thumb: res3.data.result[0].thumbnail
+                        };
+                    }
+                } catch (e) { console.log("TiklyDown uğursuz"); }
             }
 
             if (igData && igData.url) {
@@ -87,15 +100,14 @@ app.get('/api/info', async (req, res) => {
                     download_url: igData.url
                 });
             } else {
-                return res.status(404).json({ error: "Instagram videosu tapılmadı. Hesab gizli ola bilər və ya link xətalıdır." });
+                return res.status(404).json({ error: "Video tapılmadı. Hesab gizli ola bilər və ya linkdə problem var." });
             }
         }
 
-        res.status(400).json({ error: "Dəstəklənməyən platforma." });
+        res.status(400).json({ error: "Platforma dəstəklənmir." });
 
     } catch (err) {
-        console.error("Global Error:", err.message);
-        res.status(500).json({ error: "Server xətası baş verdi. Bir az sonra yenidən yoxlayın." });
+        res.status(500).json({ error: "Serverdə xəta baş verdi. Bir az sonra yoxlayın." });
     }
 });
 
